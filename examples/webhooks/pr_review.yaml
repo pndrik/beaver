@@ -1,0 +1,20 @@
+---
+metadata:
+  name: pr_review
+  display_name: PR Review
+  description: This webhook triggers a PR review process when a pull request is created or updated.
+  token: "REPLACE_WITH_YOUR_WEBHOOK_TOKEN"
+handler:
+  agent: conductor
+  prompt: |
+    Hi Gary,
+
+    A new Bitbucket pull request has been created. Please review the changes and provide your feedback as comments and action items on the pull request.
+
+    Workspace: {{ Body.repository.workspace.slug }}
+    Repository: {{ Body.repository.name }}
+    Pull request id: {{ Body.pullrequest.id }}
+
+    Title: {{ Body.pullrequest.rendered.title.raw }}
+    Description:
+    {{ Body.pullrequest.rendered.description.raw | indent(prefix="  ") }}

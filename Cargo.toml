@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+  "adapters",
+  "app",
+  "domains",
+  "platforms/cli",
+  "platforms/webhook"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1.89"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+app = { path = "app" }
+app-domains = { path = "domains" }
+app-adapters = { path = "adapters" }
+yaml_serde = "0.10"
+uuid = { version = "1.23.5", features = ["v4"] }
+regex = "1.13.1"
+http = "1.4.2"

@@ -1,0 +1,16 @@
+# Rust
+debug
+target
+
+**/*.rs.bk
+rustc-ice-*.txt
+
+# IDEs
+.claude
+.idea
+.kiro
+.vscode
+
+# macOS
+.DS_Store
+__MACOSX/

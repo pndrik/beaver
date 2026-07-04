@@ -1,0 +1,49 @@
+# nameOverride: ""
+
+image:
+  repository: ghcr.io/pndrik/beaver
+  tag: "v0.0.1"
+  pullPolicy: IfNotPresent
+
+env:
+  CONFIGURATION__PATH: /configuration.yaml
+configuration:
+  context:
+    chroot: "/sandbox"
+  agents:
+    provider: "file"
+    path: "/agents"
+  webhooks:
+    provider: "file"
+    path: "/webhooks"
+  skills:
+    providers:
+      embedded:
+        enabled: true
+      javascript:
+        enabled: true
+        path: "/skills"
+webhooks: {}
+agents: {}
+
+ingress:
+  enabled: false
+  host: "beaver.example.com"
+  labels: {}
+  annotations: {}
+
+webhook:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  hpa:
+    minReplicas: 1
+    maxReplicas: 3
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 80

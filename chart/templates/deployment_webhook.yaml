@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.name" . }}-webhook
+  labels: {{ include "chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+spec:
+  selector:
+    matchLabels: {{ include "chart.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: webhook
+  template:
+    metadata:
+      labels: {{ include "chart.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: webhook
+    spec:
+      securityContext: {{ toYaml .Values.webhook.securityContext | nindent 8 }}
+      containers:
+        - name: beaver
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: ["/webhook"]
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - secretRef:
+                name: {{ include "chart.name" . }}-env
+          volumeMounts:
+            - name: configuration
+              mountPath: /configuration.yaml
+              subPath: configuration.yaml
+            - name: sandbox
+              mountPath: /sandbox
+            - name: webhooks
+              mountPath: /webhooks
+          {{- range $name, $_ := .Values.agents }}
+            - name: agents
+              mountPath: /agents/{{ $name }}/config.yaml
+              subPath: {{ $name }}.yaml
+            - name: agents
+              mountPath: /agents/{{ $name }}/prompt.md
+              subPath: {{ $name }}.md
+          {{- end }}
+          ports:
+            - containerPort: 8080
+      volumes:
+        - name: configuration
+          secret:
+            secretName: {{ include "chart.name" . }}-configuration
+            items:
+              - key: configuration.yaml
+                path: configuration.yaml
+        - name: sandbox
+          emptyDir: {}
+        - name: webhooks
+          secret:
+            secretName: {{ include "chart.name" . }}-webhooks
+        - name: agents
+          secret:
+            secretName: {{ include "chart.name" . }}-agents

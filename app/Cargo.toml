@@ -1,0 +1,11 @@
+[package]
+name = "app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+app-domains.workspace = true
+app-adapters.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true

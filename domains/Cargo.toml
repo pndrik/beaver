@@ -1,0 +1,9 @@
+[package]
+name = "app-domains"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true

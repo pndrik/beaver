@@ -1,0 +1,9 @@
+[package]
+name = "cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+app.workspace = true
+app-domains.workspace = true
+tokio.workspace = true

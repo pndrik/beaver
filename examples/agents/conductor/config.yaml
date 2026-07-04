@@ -1,0 +1,24 @@
+---
+metadata:
+  name: conductor
+  display_name: Gary
+  description: The conductor talks to the human, clarifies the task, and delegates it to the worker.
+  model:
+    name: claude-fable-5
+permissions:
+  skills:
+    - name: subagent
+      roles: [list, join]
+      confirmation_required: false
+      scopes:
+        - worker
+    - name: file
+      roles: [list, read, write, delete, mkdir]
+      confirmation_required: false
+      scopes:
+        - /
+    - name: js_bitbucket_pr_comment
+    - name: js_bitbucket_pr_diff
+    - name: js_bitbucket_pr_list
+    - name: js_bitbucket_pr_get
+  workflows: []

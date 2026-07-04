@@ -1,0 +1,15 @@
+---
+metadata:
+  name: worker
+  display_name: Bert
+  description: A worker agent that performs tasks assigned by the conductor.
+  model:
+    name: gemini-3-flash
+permissions:
+  skills:
+    - name: file
+      roles: [list, read, write, delete, mkdir]
+      confirmation_required: false
+      scopes:
+        - AI/
+  workflows: []

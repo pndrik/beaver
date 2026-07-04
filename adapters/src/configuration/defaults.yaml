@@ -1,0 +1,39 @@
+context:
+  chroot: "/tmp"
+configuration:
+  cache:
+    ttl: 60
+webhooks:
+  port: 8080
+  bind: "0.0.0.0"
+  provider: "file"
+  path: ""
+agents:
+  provider: "file"
+  path: ""
+inference:
+  providers:
+    anthropic:
+      enabled: false
+      endpoint: https://api.anthropic.com/v1/
+      apikey: ""
+    zen:
+      enabled: false
+      endpoint: https://opencode.ai/zen/v1/
+      apikey: ""
+skills:
+  providers:
+    embedded:
+      enabled: true
+    javascript:
+      enabled: false
+      path: ""
+    mcp:
+      enabled: false
+      servers:
+        - url: "https://mcp.example.com"
+          apikey: ""
+  configuration:
+    js_bitbucket_pr:
+      api_key: ""
+      base_url: "https://api.bitbucket.org"
