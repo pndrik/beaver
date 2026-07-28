@@ -2,7 +2,7 @@
 
 image:
   repository: ghcr.io/pndrik/beaver
-  tag: "v0.0.1"
+  tag: "v0.0.2"
   pullPolicy: IfNotPresent
 
 env:
@@ -37,6 +37,11 @@ webhook:
     runAsUser: 1000
     runAsGroup: 1000
     fsGroup: 1000
+  service:
+    type: ClusterIP
+    port: 80
+    labels: {}
+    annotations: {}
   hpa:
     minReplicas: 1
     maxReplicas: 3
@@ -47,3 +52,5 @@ webhook:
           target:
             type: Utilization
             averageUtilization: 80
+
+extraObjects: []

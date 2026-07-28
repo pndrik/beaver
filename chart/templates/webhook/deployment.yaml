@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "chart.name" . }}-webhook
+  name: {{ include "chart.fullname" . }}-webhook
   labels: {{ include "chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: webhook
 spec:
@@ -21,7 +21,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
             - secretRef:
-                name: {{ include "chart.name" . }}-env
+                name: {{ include "chart.fullname" . }}-env
           volumeMounts:
             - name: configuration
               mountPath: /configuration.yaml
@@ -40,10 +40,18 @@ spec:
           {{- end }}
           ports:
             - containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
       volumes:
         - name: configuration
           secret:
-            secretName: {{ include "chart.name" . }}-configuration
+            secretName: {{ include "chart.fullname" . }}-configuration
             items:
               - key: configuration.yaml
                 path: configuration.yaml
@@ -51,7 +59,7 @@ spec:
           emptyDir: {}
         - name: webhooks
           secret:
-            secretName: {{ include "chart.name" . }}-webhooks
+            secretName: {{ include "chart.fullname" . }}-webhooks
         - name: agents
           secret:
-            secretName: {{ include "chart.name" . }}-agents
+            secretName: {{ include "chart.fullname" . }}-agents

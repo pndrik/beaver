@@ -53,6 +53,7 @@ async fn main() {
         .expect("Failed to bind to address");
 
     let router = Router::new()
+        .route("/healthz", any(|| async { "OK" }))
         .route("/hooks/{name}", any(hooks::handler))
         .with_state(Arc::new(application))
         .layer(middleware::from_fn(context_middleware));
