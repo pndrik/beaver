@@ -8,7 +8,7 @@ use boa_engine::{
 use boa_runtime::{Console, console::DefaultLogger};
 use std::{path::Path, rc::Rc};
 
-use super::{FilteredFetcher, JavaScript};
+use super::{FilteredFetcher, JavaScript, base64::register_base64};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
@@ -57,6 +57,15 @@ impl JavaScript {
                 Internal,
                 "skill_failed",
                 &format!("Failed to register console: {}", e),
+                ctx.clone()
+            )
+        })?;
+
+        register_base64(&mut context).map_err(|e| {
+            app_error!(
+                Internal,
+                "skill_failed",
+                &format!("Failed to register base64: {}", e),
                 ctx.clone()
             )
         })?;

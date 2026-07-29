@@ -5,6 +5,7 @@ import BitbucketClient from './bitbucket_client.js';
 
 function getClient(configuration, workspace) {
   return new BitbucketClient({
+    username: configuration.username || "",
     apiToken: configuration.api_key || "",
     workspace: workspace,
     baseUrl: configuration.base_url || 'https://api.bitbucket.org',

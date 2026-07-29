@@ -3,6 +3,7 @@
 
 class BitbucketClient {
   constructor({
+    username = '',
     apiToken,
     workspace,
     baseUrl = 'https://api.bitbucket.org'
@@ -13,10 +14,21 @@ class BitbucketClient {
     if (!workspace || typeof workspace !== 'string') {
       throw new Error('Workspace is required');
     }
+    if (typeof username !== 'string') {
+      throw new Error('Username must be a string');
+    }
 
     this.workspace = workspace;
+    this.username = username;
     this.apiToken = apiToken;
     this.baseUrl = baseUrl;
+  }
+
+  getAuthHeader() {
+    if (this.username.length > 0) {
+      return 'Basic ' + btoa(`${this.username}:${this.apiToken}`);
+    }
+    return `Bearer ${this.apiToken}`;
   }
 
   async request(path, options = {}) {
@@ -24,7 +36,7 @@ class BitbucketClient {
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiToken}`,
+        Authorization: this.getAuthHeader(),
         ...(options.headers || {}),
       },
     });

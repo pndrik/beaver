@@ -8,6 +8,7 @@ use app_domains::{
     core::models::{AppContext, AppError},
 };
 
+mod base64;
 mod fetch;
 use fetch::FilteredFetcher;
 mod helper;
