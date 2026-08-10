@@ -4,6 +4,7 @@
 pub mod agent;
 pub mod configuration;
 pub mod inference;
+pub mod logger;
 pub mod skills;
 pub mod template_engine;
 pub mod webhooks;

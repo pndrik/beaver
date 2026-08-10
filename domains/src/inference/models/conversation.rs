@@ -19,27 +19,13 @@ pub struct Conversation {
 
 impl Conversation {
     pub fn new(system_prompt: String, agent: Agent, skills: Vec<Skill>) -> Self {
-        let mut conversation = Self {
+        Self {
             system_prompt,
             agent,
-            skills: vec![],
+            skills,
             messages: vec![],
             subscribers: vec![],
-        };
-
-        for skill in skills {
-            conversation.add_skill(skill);
         }
-
-        conversation
-    }
-
-    pub fn add_skill(&mut self, skill: Skill) {
-        if !self.agent.permissions.has_skill_permission(&skill.name) {
-            return;
-        }
-
-        self.skills.push(skill);
     }
 
     pub fn prompt(&self) -> String {

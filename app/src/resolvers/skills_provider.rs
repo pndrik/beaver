@@ -51,11 +51,13 @@ pub async fn skills_provider(
     })
     .await?;
 
-    //TBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBD
-    // add_provider_if_enabled(ctx, &mut providers, "mcp", |ctx| {
-    //    Arc::new(app_adapters::skills::provider::McpProvider::new(ctx))
-    // })
-    //TBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBDTBD
+    add_provider_if_enabled(ctx, &mut providers, "mcp", async |ctx| {
+        let mut provider = app_adapters::skills::provider::McpProvider::new(ctx);
+        provider.reload(ctx).await?;
+
+        Ok(Arc::new(provider) as Arc<dyn SkillsProvider + Send + Sync>)
+    })
+    .await?;
 
     Ok(providers)
 }

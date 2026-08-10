@@ -7,27 +7,37 @@ use std::collections::HashMap;
 use crate::app_error;
 use crate::core::models::{AppContext, AppError};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SchemaFieldType {
     String,
     Integer,
+    Number,
     Boolean,
     Null,
 
     Array,
+    #[default]
     Object,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum SchemaItems {
+    Single(Box<SchemaField>),
+    Tuple(Vec<SchemaField>),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SchemaField {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub field_type: SchemaFieldType,
     #[serde(rename = "enum", skip_serializing_if = "Option::is_none")]
     pub enumeration: Option<Vec<String>>,
+    #[serde(default)]
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub items: Option<Vec<SchemaField>>,
+    pub items: Option<SchemaItems>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub required: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -69,6 +79,19 @@ impl SchemaField {
         }
     }
 
+    pub fn set_items(&mut self, ctx: &AppContext, field: SchemaField) -> Result<(), AppError> {
+        if self.field_type != SchemaFieldType::Array {
+            return Err(app_error!(
+                Validation,
+                "internal_error",
+                format!("Cannot add items to field of type {:?}", self.field_type),
+                ctx.clone()
+            ));
+        }
+        self.items = Some(SchemaItems::Single(Box::new(field)));
+        Ok(())
+    }
+
     pub fn add_item(&mut self, ctx: &AppContext, field: SchemaField) -> Result<(), AppError> {
         if self.field_type != SchemaFieldType::Array {
             return Err(app_error!(
@@ -78,10 +101,19 @@ impl SchemaField {
                 ctx.clone()
             ));
         }
-        if self.items.is_none() {
-            self.items = Some(Vec::new());
+        match &mut self.items {
+            Some(SchemaItems::Tuple(v)) => v.push(field),
+            None => self.items = Some(SchemaItems::Tuple(vec![field])),
+            Some(SchemaItems::Single(_)) => {
+                return Err(app_error!(
+                    Validation,
+                    "internal_error",
+                    "Cannot add a tuple item to an array whose items is a single schema"
+                        .to_string(),
+                    ctx.clone()
+                ));
+            }
         }
-        self.items.as_mut().unwrap().push(field);
         Ok(())
     }
 
@@ -161,6 +193,20 @@ impl Schema {
                 Internal,
                 "internal_error",
                 format!("Failed to serialize schema: {}", e),
+                ctx.clone()
+            )
+        })
+    }
+
+    pub fn from_json_input_schema(
+        ctx: &AppContext,
+        map: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<Self, AppError> {
+        serde_json::from_value(serde_json::Value::Object(map)).map_err(|e| {
+            app_error!(
+                Validation,
+                "invalid_schema",
+                format!("Failed to deserialize input schema: {}", e),
                 ctx.clone()
             )
         })

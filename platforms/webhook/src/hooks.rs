@@ -45,11 +45,22 @@ pub(crate) async fn handler(
     let body = body.clone();
     let token = token.to_string();
     tokio::spawn(async move {
-        let _ = app
+        match app
             .domains
             .inference
             .webhook_call(&ctx, &name, &token, &body, &app.domains.skills)
-            .await;
+            .await
+        {
+            Ok(_) => {}
+            Err(err) => {
+                ctx.logger
+                    .error(
+                        &ctx,
+                        &format!("Webhook call failed: {}", err.internal_message),
+                    )
+                    .await;
+            }
+        }
     });
 
     (

@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use axum::extract::State;
 use axum::{
     Router,
     extract::Request,
@@ -17,13 +18,6 @@ mod extensions;
 mod hooks;
 mod models;
 
-async fn get_application() -> Result<(App, AppContext), AppError> {
-    let ctx = app::context("bootstrap".to_string()).await?;
-    let application = app::bootstrap(&ctx).await?;
-
-    Ok((application, ctx))
-}
-
 async fn get_bind_addr(ctx: &AppContext) -> Result<String, AppError> {
     let port = ctx.configuration.get_int(&ctx, "webhooks.port").await?;
     let bind = ctx.configuration.get_string(&ctx, "webhooks.bind").await?;
@@ -31,18 +25,37 @@ async fn get_bind_addr(ctx: &AppContext) -> Result<String, AppError> {
     Ok(format!("{}:{}", bind, port))
 }
 
-async fn context_middleware(mut req: Request, next: Next) -> Response {
+async fn context_middleware(
+    State(application): State<Arc<App>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
     let id = uuid::Uuid::new_v4().to_string();
-    let ctx = app::context(id).await.unwrap();
+    let ctx = application
+        .get_context(id)
+        .await
+        .expect("Failed to get application context");
+
+    ctx.logger
+        .info(&ctx, &format!("[{}] {}", req.method(), req.uri().path()))
+        .await;
+
     req.extensions_mut().insert(ctx);
     next.run(req).await
 }
 
 #[tokio::main]
 async fn main() {
-    let (application, ctx) = get_application()
+    let application = Arc::new(
+        app::bootstrap()
+            .await
+            .expect("Failed to initialize application"),
+    );
+
+    let ctx = application
+        .get_context("boot-webhook".to_string())
         .await
-        .expect("Failed to initialize application");
+        .expect("Failed to get application context");
 
     let bind_addr = get_bind_addr(&ctx)
         .await
@@ -55,7 +68,11 @@ async fn main() {
     let router = Router::new()
         .route("/healthz", any(|| async { "OK" }))
         .route("/hooks/{name}", any(hooks::handler))
-        .with_state(Arc::new(application))
-        .layer(middleware::from_fn(context_middleware));
+        .with_state(application.clone())
+        .layer(middleware::from_fn_with_state(
+            application.clone(),
+            context_middleware,
+        ));
+
     axum::serve(listener, router).await.unwrap();
 }

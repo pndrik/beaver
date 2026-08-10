@@ -6,3 +6,6 @@ pub use embedded::*;
 
 mod js;
 pub use js::*;
+
+mod mcp;
+pub use mcp::*;

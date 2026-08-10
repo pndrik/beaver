@@ -16,4 +16,9 @@ pub trait Configuration: Debug {
         ctx: &AppContext,
         key: &str,
     ) -> Result<HashMap<String, String>, AppError>;
+    async fn get_json_value(
+        &self,
+        ctx: &AppContext,
+        key: &str,
+    ) -> Result<serde_json::Value, AppError>;
 }

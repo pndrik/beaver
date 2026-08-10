@@ -14,7 +14,7 @@ use crate::{
     skills::Skills,
 };
 
-const MAX_INFERENCE_SKILL_ITERATIONS: usize = 5;
+const MAX_INFERENCE_SKILL_ITERATIONS: usize = 25;
 
 async fn find_inference_provider(
     ctx: &AppContext,

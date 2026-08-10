@@ -21,4 +21,5 @@ permissions:
     - name: js_bitbucket_pr_diff
     - name: js_bitbucket_pr_list
     - name: js_bitbucket_pr_get
+    - name: ^mcp_atlassian_.*$
   workflows: []

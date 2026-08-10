@@ -12,6 +12,11 @@ spec:
     metadata:
       labels: {{ include "chart.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: webhook
+      annotations:
+        checksum/webhooks: {{ include (print $.Template.BasePath "/webhook/secret.yaml") . | sha256sum }}
+        checksum/agents: {{ include (print $.Template.BasePath "/secret_agents.yaml") . | sha256sum }}
+        checksum/configuration: {{ include (print $.Template.BasePath "/secret_configuration.yaml") . | sha256sum }}
+        checksum/env: {{ include (print $.Template.BasePath "/secret_env.yaml") . | sha256sum }}
     spec:
       securityContext: {{ toYaml .Values.webhook.securityContext | nindent 8 }}
       containers:
@@ -38,6 +43,7 @@ spec:
               mountPath: /agents/{{ $name }}/prompt.md
               subPath: {{ $name }}.md
           {{- end }}
+          resources: {{ toYaml .Values.webhook.resources | nindent 12 }}
           ports:
             - containerPort: 8080
           livenessProbe:

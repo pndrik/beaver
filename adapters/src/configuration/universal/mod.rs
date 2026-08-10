@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use async_trait::async_trait;
-use config::{Config, ConfigBuilder, Environment, File, FileFormat, builder::DefaultState};
+use config::{Config, ConfigBuilder, Environment, File, FileFormat, Value, builder::DefaultState};
 use std::{
     collections::HashMap,
     sync::RwLock,
@@ -143,5 +143,30 @@ impl Configuration for ConfigurationUniversal {
             .collect::<HashMap<String, String>>();
 
         Ok(result)
+    }
+
+    async fn get_json_value(
+        &self,
+        ctx: &AppContext,
+        key: &str,
+    ) -> Result<serde_json::Value, AppError> {
+        let config = self.get_config(ctx)?;
+        let value = config.get::<Value>(key).map_err(|e| {
+            app_error!(
+                Internal,
+                "configuration_load_failed",
+                &format!("Failed to get JSON value for key '{}': {}", key, e),
+                ctx.clone()
+            )
+        })?;
+
+        value.try_deserialize().map_err(|e| {
+            app_error!(
+                Internal,
+                "configuration_load_failed",
+                &format!("Failed to deserialize JSON value for key '{}': {}", key, e),
+                ctx.clone()
+            )
+        })
     }
 }

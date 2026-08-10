@@ -7,3 +7,4 @@ edition.workspace = true
 app.workspace = true
 app-domains.workspace = true
 tokio.workspace = true
+app-adapters.workspace = true

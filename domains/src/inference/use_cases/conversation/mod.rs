@@ -18,10 +18,7 @@ impl Inference {
     ) -> Result<Conversation, AppError> {
         let agent = self.agent_provider.get(ctx, agent_name).await?;
 
-        let mut skills_found = Vec::new();
-        for provider in &skills.skills_providers {
-            skills_found.extend(provider.list(ctx).await?);
-        }
+        let mut skills_found = skills.list_all(ctx).await?;
 
         skills_found.push(Skill {
             name: subagent::NAME.to_string(),
@@ -31,9 +28,7 @@ impl Inference {
 
         let skills_filtered = skills_found
             .iter()
-            .filter(|s| {
-                agent.permissions.skills.iter().any(|p| p.name == s.name) || s.name == "subagent"
-            })
+            .filter(|s| agent.permissions.has_skill_permission(&s.name) || s.name == "subagent")
             .cloned()
             .collect::<Vec<Skill>>();
 

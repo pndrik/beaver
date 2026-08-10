@@ -24,6 +24,14 @@ impl Call {
         serde_json::to_string(&self.arguments).unwrap_or_default()
     }
 
+    pub fn arguments_as_json_map(&self) -> serde_json::Map<String, serde_json::Value> {
+        serde_json::to_value(&self.arguments)
+            .unwrap_or_default()
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+    }
+
     pub fn validate_arguments(&self, schema: Schema) -> bool {
         for field in schema.required {
             if !self.arguments.contains_key(&field) {
@@ -40,6 +48,10 @@ impl Call {
                 (SchemaFieldType::String, CallValue::String(_)) => {}
                 (SchemaFieldType::Integer, CallValue::Integer(_)) => {}
                 (SchemaFieldType::Boolean, CallValue::Boolean(_)) => {}
+                (SchemaFieldType::Number, CallValue::Float(_)) => {}
+                (SchemaFieldType::Number, CallValue::Integer(_)) => {}
+                (SchemaFieldType::Array, CallValue::Array(_)) => {}
+                (SchemaFieldType::Object, CallValue::Object(_)) => {}
                 _ => return false,
             }
         }
@@ -53,7 +65,11 @@ impl Call {
 pub enum CallValue {
     String(String),
     Integer(i64),
+    Float(f64),
     Boolean(bool),
+
+    Array(Vec<CallValue>),
+    Object(HashMap<String, CallValue>),
 }
 impl CallValue {
     pub fn as_string(&self) -> Option<String> {

@@ -25,7 +25,19 @@ impl Value {
         match value {
             CallValue::String(s) => Value::String(s.clone()),
             CallValue::Integer(i) => Value::Integer(*i),
+            CallValue::Float(f) => Value::Float(*f),
             CallValue::Boolean(b) => Value::Bool(*b),
+            CallValue::Array(a) => {
+                let items = a.iter().map(|v| Value::new_from_call_value(v)).collect();
+                Value::List(items)
+            }
+            CallValue::Object(o) => {
+                let map = o
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Value::new_from_call_value(v)))
+                    .collect();
+                Value::Map(map)
+            }
         }
     }
 

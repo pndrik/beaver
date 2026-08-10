@@ -14,29 +14,6 @@ use crate::{
     },
 };
 
-async fn get_permission_for_skill(
-    ctx: &AppContext,
-    agent_permissions: &AgentPermissions,
-    skill_name: &str,
-) -> Result<SkillPermission, AppError> {
-    agent_permissions
-        .skills
-        .iter()
-        .find(|p| p.name == skill_name)
-        .cloned()
-        .ok_or_else(|| {
-            app_error!(
-                Unauthorized,
-                "skill_permission_denied",
-                &format!(
-                    "Agent does not have permission to call skill: {}",
-                    skill_name
-                ),
-                ctx.clone()
-            )
-        })
-}
-
 async fn add_tool_message_to_conversation(
     _ctx: &AppContext,
     conversation: &mut Conversation,
@@ -55,6 +32,26 @@ async fn add_tool_message_to_conversation(
     Ok(())
 }
 
+fn get_permission_for_skill(
+    ctx: &AppContext,
+    permissions: &AgentPermissions,
+    skill_name: &str,
+) -> Result<SkillPermission, AppError> {
+    permissions
+        .get_permission_for_skill(skill_name)
+        .ok_or_else(|| {
+            app_error!(
+                Unauthorized,
+                "skill_permission_denied",
+                &format!(
+                    "Agent does not have permission to call skill: {}",
+                    skill_name
+                ),
+                ctx.clone()
+            )
+        })
+}
+
 impl Skills {
     pub async fn call(
         &self,
@@ -62,8 +59,40 @@ impl Skills {
         conversation: &mut Conversation,
         call: &Call,
     ) -> Result<(), AppError> {
+        ctx.logger
+            .trace(
+                ctx,
+                &format!(
+                    "Agent '{}' is calling skill '{}'",
+                    conversation.agent.metadata.name, call.name
+                ),
+            )
+            .await;
+
         let permissions =
-            get_permission_for_skill(ctx, &conversation.agent.permissions, &call.name).await?;
+            match get_permission_for_skill(ctx, &conversation.agent.permissions, &call.name) {
+                Ok(p) => p,
+                Err(err) => {
+                    ctx.logger
+                        .warn(
+                            ctx,
+                            &format!(
+                                "Agent '{}' has no permission to access skill '{}'.",
+                                conversation.agent.metadata.name, call.name
+                            ),
+                        )
+                        .await;
+                    add_tool_message_to_conversation(
+                        ctx,
+                        conversation,
+                        call,
+                        "Error",
+                        &err.internal_message,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+            };
 
         for provider in &self.skills_providers {
             let skill = match provider.get(ctx, &call.name).await {
@@ -89,6 +118,15 @@ impl Skills {
                         .await?
                 }
                 Err(err) => {
+                    ctx.logger
+                        .warn(
+                            ctx,
+                            &format!(
+                                "Skill '{}' failed with: {}",
+                                call.name, err.internal_message
+                            ),
+                        )
+                        .await;
                     add_tool_message_to_conversation(
                         ctx,
                         conversation,
@@ -103,12 +141,17 @@ impl Skills {
             return Ok(());
         }
 
-        Err(app_error!(
-            NotFound,
-            "skill_not_found",
+        ctx.logger
+            .warn(ctx, &format!("Skill '{}' not found", call.name))
+            .await;
+        add_tool_message_to_conversation(
+            ctx,
+            conversation,
+            call,
+            "Error",
             &format!("Skill with name '{}' not found", call.name),
-            ctx.clone()
-        ))
+        )
+        .await
     }
 
     pub async fn call_many(
@@ -134,9 +177,7 @@ impl Skills {
         for call in calls {
             if call.name == "subagent" {
                 let permissions =
-                    get_permission_for_skill(ctx, &conversation.agent.permissions, &call.name)
-                        .await?;
-
+                    get_permission_for_skill(ctx, &conversation.agent.permissions, &call.name)?;
                 self.call_subagent_skill(ctx, conversation, permissions, &call, inference)
                     .await?;
                 continue;

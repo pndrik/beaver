@@ -5,6 +5,17 @@ configuration:
         enabled: true
         apikey: "<your_anthropic_api_key>"
   skills:
+    providers:
+      mcp:
+        enabled: true
+        servers:
+          - name: atlassian
+            description: "MCP server allowing access to Jira and Confluence."
+            url: "https://mcp.atlassian.com/v1/mcp/preview"
+            credentials:
+              basic:
+                username: "<Username>"
+                password: "<API Token>"
     configuration:
       js_bitbucket_pr:
         api_key: "<your_bitbucket_api_key>"

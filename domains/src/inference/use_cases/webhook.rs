@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::Inference,
+    inference::{Inference, models::MessageType},
     skills::Skills,
 };
 
@@ -40,8 +40,18 @@ impl Inference {
             .await?;
 
         conversation.add_user_message(prompt);
-
         self.infer(ctx, &mut conversation, skills).await?;
+
+        for message in conversation.messages() {
+            if message.message_type == MessageType::Assistant {
+                ctx.logger
+                    .trace(
+                        ctx,
+                        &format!("[{}]: {}", message.display_name, message.content),
+                    )
+                    .await;
+            }
+        }
 
         Ok(())
     }

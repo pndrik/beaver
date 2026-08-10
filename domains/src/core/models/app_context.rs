@@ -6,13 +6,14 @@ use std::sync::Arc;
 
 use super::AppError;
 use crate::app_error;
-use crate::core::traits::Configuration;
+use crate::core::traits::{Configuration, Logger};
 
 #[derive(Debug, Clone)]
 pub struct AppContext {
     pub trace_id: String,
     pub chroot: String,
     pub configuration: Arc<dyn Configuration + Send + Sync>,
+    pub logger: Arc<dyn Logger + Send + Sync>,
 }
 
 impl AppContext {
@@ -20,6 +21,7 @@ impl AppContext {
         trace_id: String,
         chroot: String,
         configuration: Arc<dyn Configuration + Send + Sync>,
+        logger: Arc<dyn Logger + Send + Sync>,
     ) -> Result<Self, AppError> {
         let chroot = Path::new(chroot.trim_end_matches('/'))
             .canonicalize()
@@ -32,6 +34,7 @@ impl AppContext {
                         trace_id: trace_id.clone(),
                         chroot,
                         configuration: configuration.clone(),
+                        logger: logger.clone(),
                     }
                 )
             })?
@@ -42,6 +45,7 @@ impl AppContext {
             trace_id,
             chroot,
             configuration,
+            logger,
         })
     }
 

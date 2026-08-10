@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use super::Model;
@@ -35,7 +36,30 @@ pub struct AgentPermissions {
 
 impl AgentPermissions {
     pub fn has_skill_permission(&self, skill_name: &str) -> bool {
-        self.skills.iter().any(|skill| skill.name == skill_name)
+        self.get_permission_for_skill(skill_name).is_some()
+    }
+
+    pub(crate) fn get_permission_for_skill(&self, skill_name: &str) -> Option<SkillPermission> {
+        for permission in &self.skills {
+            if permission.name.starts_with("^") && permission.name.ends_with("$") {
+                let regex = match Regex::new(&permission.name.clone()) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        continue;
+                    }
+                };
+
+                if regex.is_match(skill_name) {
+                    return Some(permission.clone());
+                }
+            }
+
+            if permission.name == skill_name {
+                return Some(permission.clone());
+            }
+        }
+
+        None
     }
 }
 

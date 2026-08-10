@@ -4,5 +4,8 @@
 mod configuration;
 pub use configuration::*;
 
+mod logger;
+pub use logger::*;
+
 mod template_engine;
 pub use template_engine::*;
