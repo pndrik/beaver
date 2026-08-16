@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use crate::core::models::{AppContext, AppError};
 use crate::inference::models::{Conversation, Model, Options};
-use crate::skills::models::Call as SkillCall;
+use crate::tools::models::Call as SkillCall;
 
 #[async_trait]
 pub trait InferenceProvider {

@@ -10,7 +10,7 @@ use app_domains::{
         models::{Conversation, Model, ModelAdapter, Options},
         traits::InferenceProvider,
     },
-    skills::models::Call as SkillCall,
+    tools::models::Call as SkillCall,
 };
 
 mod client;
@@ -85,7 +85,7 @@ impl InferenceProvider for GenAi {
             );
         };
 
-        self.tool_calls_to_skill_calls(ctx, chat_response.into_tool_calls())
+        self.tool_calls_to_tool_calls(ctx, chat_response.into_tool_calls())
     }
 
     async fn supported_models(&self, ctx: &AppContext) -> Result<Vec<Model>, AppError> {

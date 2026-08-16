@@ -3,4 +3,4 @@
 
 pub mod core;
 pub mod inference;
-pub mod skills;
+pub mod tools;

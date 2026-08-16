@@ -5,14 +5,14 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use super::Model;
-use crate::skills::models::SkillPermission;
+use crate::tools::models::ToolPermission;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Agent {
     pub metadata: AgentMetadata,
     pub permissions: AgentPermissions,
 
-    #[serde(default, skip_serializing)]
+    #[serde(default)]
     pub prompt: String,
 }
 
@@ -31,16 +31,16 @@ pub struct AgentMetadataModel {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentPermissions {
-    pub skills: Vec<SkillPermission>,
+    pub tools: Vec<ToolPermission>,
 }
 
 impl AgentPermissions {
-    pub fn has_skill_permission(&self, skill_name: &str) -> bool {
-        self.get_permission_for_skill(skill_name).is_some()
+    pub fn has_tool_permission(&self, tool_name: &str) -> bool {
+        self.get_permission_for_tool(tool_name).is_some()
     }
 
-    pub(crate) fn get_permission_for_skill(&self, skill_name: &str) -> Option<SkillPermission> {
-        for permission in &self.skills {
+    pub(crate) fn get_permission_for_tool(&self, tool_name: &str) -> Option<ToolPermission> {
+        for permission in &self.tools {
             if permission.name.starts_with("^") && permission.name.ends_with("$") {
                 let regex = match Regex::new(&permission.name.clone()) {
                     Ok(r) => r,
@@ -49,12 +49,12 @@ impl AgentPermissions {
                     }
                 };
 
-                if regex.is_match(skill_name) {
+                if regex.is_match(tool_name) {
                     return Some(permission.clone());
                 }
             }
 
-            if permission.name == skill_name {
+            if permission.name == tool_name {
                 return Some(permission.clone());
             }
         }
@@ -70,7 +70,7 @@ impl Agent {
         description: String,
         prompt: String,
         model: AgentMetadataModel,
-        permissions_skills: Vec<SkillPermission>,
+        permissions_tools: Vec<ToolPermission>,
     ) -> Self {
         Self {
             metadata: AgentMetadata {
@@ -80,7 +80,7 @@ impl Agent {
                 model,
             },
             permissions: AgentPermissions {
-                skills: permissions_skills,
+                tools: permissions_tools,
             },
             prompt,
         }

@@ -7,8 +7,8 @@ pub(crate) use agent_provider::*;
 mod inference_providers;
 pub(crate) use inference_providers::*;
 
-mod skills_provider;
-pub(crate) use skills_provider::*;
+mod tools_provider;
+pub(crate) use tools_provider::*;
 
 mod template_engine;
 pub(crate) use template_engine::*;

@@ -1,0 +1,183 @@
+{
+  "name": "bitbucket_pr",
+  "version": "0.0.1",
+  "description": "A Beaver tool that can review pull requests on Bitbucket. This tool is not linked to or affiliated with Bitbucket or Atlassian in any way.",
+  "author": "Patrick Hunziker <patrick@hunziker.io>",
+  "license": "Elastic License 2.0",
+
+  "config": {
+    "beaver": {
+      "tools": {
+        "bitbucket_pr_list": {
+          "main": "bitbucket_pr_list.js",
+          "description": "Lists pull requests from a Bitbucket repository.",
+          "scopes": {
+            "fetch": {
+              "methods": ["GET"],
+              "urls": ["^https://api.bitbucket.org/.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["workspace", "repository", "state"],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "description": "The Bitbucket workspace."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository slug."
+              },
+              "state": {
+                "type": "string",
+                "description": "The state of the pull requests to list (e.g., OPEN, MERGED, DECLINED, SUPERSEDED).",
+                "enum": ["OPEN", "MERGED", "DECLINED", "SUPERSEDED"]
+              }
+            }
+          }
+        },
+        "bitbucket_pr_get": {
+          "main": "bitbucket_pr_get.js",
+          "description": "Get title, summary and all comments of a pull request.",
+          "scopes": {
+            "fetch": {
+              "methods": ["GET"],
+              "urls": ["^https://api.bitbucket.org/.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["workspace", "repository", "id"],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "description": "The Bitbucket workspace."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository slug."
+              },
+              "id": {
+                "type": "integer",
+                "description": "The id of the pull request."
+              }
+            }
+          }
+        },
+        "bitbucket_pr_diff": {
+          "main": "bitbucket_pr_diff.js",
+          "description": "Fetches the diff of a pull request from Bitbucket.",
+          "scopes": {
+            "fetch": {
+              "methods": ["GET"],
+              "urls": ["^https://api.bitbucket.org/.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["workspace", "repository", "id"],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "description": "The Bitbucket workspace."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository slug."
+              },
+              "id": {
+                "type": "integer",
+                "description": "The id of the pull request."
+              }
+            }
+          }
+        },
+        "bitbucket_pr_comment": {
+          "main": "bitbucket_pr_comment.js",
+          "description": "Adds a comment to a pull request from Bitbucket.",
+          "scopes": {
+            "fetch": {
+              "methods": ["POST"],
+              "urls": ["^https://api.bitbucket.org/.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["workspace", "repository", "id", "file", "line", "comment"],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "description": "The Bitbucket workspace."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository slug."
+              },
+              "id": {
+                "type": "integer",
+                "description": "The id of the pull request."
+              },
+              "file": {
+                "type": "string",
+                "description": "The file path to comment on."
+              },
+              "line": {
+                "type": "integer",
+                "description": "The line number to comment on."
+              },
+              "comment": {
+                "type": "string",
+                "description": "The comment text."
+              },
+              "task": {
+                "type": "string",
+                "description": "An optional task to associate with the comment."
+              }
+            }
+          }
+        },
+        "bitbucket_pr_create": {
+          "main": "bitbucket_pr_create.js",
+          "description": "Creates a pull request on a Bitbucket repository.",
+          "scopes": {
+            "fetch": {
+              "methods": ["POST"],
+              "urls": ["^https://api.bitbucket.org/.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["workspace", "repository", "title", "source_branch", "destination_branch"],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "description": "The Bitbucket workspace."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository slug."
+              },
+              "title": {
+                "type": "string",
+                "description": "The title of the pull request."
+              },
+              "description": {
+                "type": "string",
+                "description": "An optional description for the pull request."
+              },
+              "source_branch": {
+                "type": "string",
+                "description": "The name of the branch containing the changes to merge."
+              },
+              "destination_branch": {
+                "type": "string",
+                "description": "The name of the branch to merge into."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

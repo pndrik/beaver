@@ -1,18 +1,23 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::path::Path;
-use std::sync::Arc;
+use serde::Serialize;
+use std::{path::Path, sync::Arc};
 
-use super::AppError;
-use crate::app_error;
-use crate::core::traits::{Configuration, Logger};
+use crate::{
+    app_error,
+    core::models::AppError,
+    core::traits::{Configuration, Logger},
+};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AppContext {
     pub trace_id: String,
     pub chroot: String,
+
+    #[serde(skip_serializing)]
     pub configuration: Arc<dyn Configuration + Send + Sync>,
+    #[serde(skip_serializing)]
     pub logger: Arc<dyn Logger + Send + Sync>,
 }
 

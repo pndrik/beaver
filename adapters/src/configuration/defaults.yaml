@@ -23,7 +23,7 @@ inference:
       enabled: false
       endpoint: https://opencode.ai/zen/v1/
       apikey: ""
-skills:
+tools:
   providers:
     embedded:
       enabled: true
@@ -37,3 +37,5 @@ skills:
     js_bitbucket_pr:
       api_key: ""
       base_url: "https://api.bitbucket.org"
+    git:
+      repositories: []

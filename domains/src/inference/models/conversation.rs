@@ -3,7 +3,7 @@
 
 use super::Message;
 use crate::inference::models::Agent;
-use crate::skills::models::Skill;
+use crate::tools::models::Tool;
 
 type Callback = Box<dyn Fn(Message) + Send + Sync>;
 
@@ -11,18 +11,18 @@ pub struct Conversation {
     system_prompt: String,
 
     pub agent: Agent,
-    pub skills: Vec<Skill>,
+    pub tools: Vec<Tool>,
 
     messages: Vec<Message>,
     subscribers: Vec<Callback>,
 }
 
 impl Conversation {
-    pub fn new(system_prompt: String, agent: Agent, skills: Vec<Skill>) -> Self {
+    pub fn new(system_prompt: String, agent: Agent, tools: Vec<Tool>) -> Self {
         Self {
             system_prompt,
             agent,
-            skills,
+            tools,
             messages: vec![],
             subscribers: vec![],
         }

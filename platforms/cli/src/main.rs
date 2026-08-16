@@ -22,20 +22,34 @@ async fn main() {
         conversation::run_conversation(&ctx, &application, &agent)
             .await
             .expect("Failed to run conversation");
-    } else if args.len() >= 3 && args[1] == "skills" && args[2] == "list" {
-        for skill in application
+    } else if args.len() >= 3 && args[1] == "tools" && args[2] == "list" {
+        for tool in application
             .domains
-            .skills
+            .tools
             .list_all(&ctx)
             .await
-            .expect("Failed to list skills")
+            .expect("Failed to list tools")
         {
-            println!("{} - {}", skill.name, skill.description);
+            println!("{} - {}", tool.name, tool.description);
+        }
+    } else if args.len() >= 3 && args[1] == "agents" && args[2] == "list" {
+        for agent in application
+            .domains
+            .inference
+            .agents_list(&ctx)
+            .await
+            .expect("Failed to list agents")
+        {
+            println!(
+                "{} ({}) - {}",
+                agent.metadata.name, agent.metadata.display_name, agent.metadata.description
+            );
         }
     } else {
         println!("Usage: {} <command> [args]", args[0]);
         println!("Commands:");
         println!("  conversation <agent_name> - Start a conversation with the specified agent");
-        println!("  skills list               - List available skills");
+        println!("  tools list                - List available tools");
+        println!("  agents list               - List available agents");
     }
 }

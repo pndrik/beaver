@@ -6,20 +6,18 @@ metadata:
   model:
     name: claude-fable-5
 permissions:
-  skills:
+  tools:
     - name: subagent
-      roles: [list, join]
-      confirmation_required: false
       scopes:
         - worker
-    - name: file
-      roles: [list, read, write, delete, mkdir]
-      confirmation_required: false
-      scopes:
-        - /
+    - name: file_delete
+    - name: file_mkdir
+    - name: file_read
+    - name: file_search
+    - name: file_write
     - name: js_bitbucket_pr_comment
     - name: js_bitbucket_pr_diff
     - name: js_bitbucket_pr_list
     - name: js_bitbucket_pr_get
+    - name: js_bitbucket_pr_create
     - name: ^mcp_atlassian_.*$
-  workflows: []

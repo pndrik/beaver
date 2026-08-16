@@ -27,3 +27,6 @@ rmcp = { version = "3.1.2", features = [
   "transport-streamable-http-client-reqwest",
   "auth",
 ] }
+walkdir = "2.5.0"
+git2 = { version = "0.21.0", features = ["https", "ssh", "vendored-libgit2", "vendored-openssl"] }
+ssh2 = { version = "0.9.6", features = ["vendored-openssl"] }

@@ -35,14 +35,8 @@ spec:
               mountPath: /sandbox
             - name: webhooks
               mountPath: /webhooks
-          {{- range $name, $_ := .Values.agents }}
             - name: agents
-              mountPath: /agents/{{ $name }}/config.yaml
-              subPath: {{ $name }}.yaml
-            - name: agents
-              mountPath: /agents/{{ $name }}/prompt.md
-              subPath: {{ $name }}.md
-          {{- end }}
+              mountPath: /agents
           resources: {{ toYaml .Values.webhook.resources | nindent 12 }}
           ports:
             - containerPort: 8080

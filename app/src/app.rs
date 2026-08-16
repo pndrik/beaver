@@ -37,7 +37,7 @@ impl App {
     ) -> Result<Conversation, AppError> {
         self.domains
             .inference
-            .new_conversation(ctx, &agent_name, &self.domains.skills)
+            .new_conversation(ctx, &agent_name, &self.domains.tools)
             .await
     }
 
@@ -48,7 +48,7 @@ impl App {
     ) -> Result<(), AppError> {
         self.domains
             .inference
-            .infer(ctx, conversation, self.domains.skills.as_ref())
+            .infer(ctx, conversation, self.domains.tools.as_ref())
             .await
     }
 

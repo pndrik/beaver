@@ -11,10 +11,10 @@ use crate::{
         models::{Conversation, Model, Options},
         traits::InferenceProvider,
     },
-    skills::Skills,
+    tools::Tools,
 };
 
-const MAX_INFERENCE_SKILL_ITERATIONS: usize = 25;
+const MAX_INFERENCE_TOOL_ITERATIONS: usize = 25;
 
 async fn find_inference_provider(
     ctx: &AppContext,
@@ -40,15 +40,15 @@ impl Inference {
         &self,
         ctx: &AppContext,
         conversation: &mut Conversation,
-        skills: &Skills,
+        tools: &Tools,
     ) -> Result<(), AppError> {
         let inference_provider =
             find_inference_provider(ctx, &self.inference_providers, &conversation.agent.model())
                 .await?;
         let options = Options::default();
 
-        for _ in 0..MAX_INFERENCE_SKILL_ITERATIONS {
-            let skill_calls = inference_provider
+        for _ in 0..MAX_INFERENCE_TOOL_ITERATIONS {
+            let tool_calls = inference_provider
                 .infer(ctx, &options, conversation)
                 .await?;
 
@@ -56,12 +56,12 @@ impl Inference {
                 break;
             };
 
-            if skill_calls.is_empty() {
+            if tool_calls.is_empty() {
                 if !latest_message.is_assistant() {
                     return Err(app_error!(
                         Internal,
                         "invalid_response_format",
-                        "Latest message is not from the assistant and there were no skill calls.",
+                        "Latest message is not from the assistant and there were no tool calls.",
                         ctx.clone()
                     ));
                 }
@@ -69,9 +69,9 @@ impl Inference {
                 return Ok(());
             }
 
-            if skill_calls.len() > 0 {
-                skills
-                    .call_many_with_subagent(ctx, conversation, &self, skill_calls)
+            if tool_calls.len() > 0 {
+                tools
+                    .call_many_with_subagent(ctx, conversation, &self, tool_calls)
                     .await?;
             }
         }
@@ -84,15 +84,15 @@ impl Inference {
         &self,
         ctx: &AppContext,
         conversation: &mut Conversation,
-        skills: &Skills,
+        tools: &Tools,
     ) -> Result<bool, AppError> {
         let inference_provider =
             find_inference_provider(ctx, &self.inference_providers, &conversation.agent.model())
                 .await?;
         let options = Options::default();
 
-        for _ in 0..MAX_INFERENCE_SKILL_ITERATIONS {
-            let skill_calls = inference_provider
+        for _ in 0..MAX_INFERENCE_TOOL_ITERATIONS {
+            let tool_calls = inference_provider
                 .infer(ctx, &options, conversation)
                 .await?;
 
@@ -100,12 +100,12 @@ impl Inference {
                 break;
             };
 
-            if skill_calls.is_empty() {
+            if tool_calls.is_empty() {
                 if !latest_message.is_assistant() {
                     return Err(app_error!(
                         Internal,
                         "invalid_response_format",
-                        "Latest message is not from the assistant and there were no skill calls.",
+                        "Latest message is not from the assistant and there were no tool calls.",
                         ctx.clone()
                     ));
                 }
@@ -113,12 +113,12 @@ impl Inference {
                 return Ok(false);
             }
 
-            if skill_calls.iter().any(|call| call.name == "subagent_leave") {
+            if tool_calls.iter().any(|call| call.name == "subagent_leave") {
                 return Ok(true);
             }
 
-            if skill_calls.len() > 0 {
-                skills.call_many(ctx, conversation, skill_calls).await?;
+            if tool_calls.len() > 0 {
+                tools.call_many(ctx, conversation, tool_calls).await?;
             }
         }
 

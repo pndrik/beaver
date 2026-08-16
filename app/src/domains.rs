@@ -4,13 +4,13 @@
 use std::sync::Arc;
 
 use app_domains::core::models::{AppContext, AppError};
-use app_domains::{inference::Inference, skills::Skills};
+use app_domains::{inference::Inference, tools::Tools};
 
 use crate::resolvers;
 
 pub struct Domains {
     pub inference: Arc<Inference>,
-    pub skills: Arc<Skills>,
+    pub tools: Arc<Tools>,
 }
 
 async fn get_inference(ctx: &AppContext) -> Result<Inference, AppError> {
@@ -27,17 +27,17 @@ async fn get_inference(ctx: &AppContext) -> Result<Inference, AppError> {
     )
 }
 
-async fn get_skills(ctx: &AppContext) -> Result<Skills, AppError> {
-    let skills_providers = resolvers::skills_provider(ctx).await?;
+async fn get_tools(ctx: &AppContext) -> Result<Tools, AppError> {
+    let tools_providers = resolvers::tools_provider(ctx).await?;
 
-    Skills::new(skills_providers)
+    Tools::new(tools_providers)
 }
 
 impl Domains {
     pub async fn new(ctx: &AppContext) -> Result<Self, AppError> {
         Ok(Self {
             inference: Arc::new(get_inference(ctx).await?),
-            skills: Arc::new(get_skills(ctx).await?),
+            tools: Arc::new(get_tools(ctx).await?),
         })
     }
 }

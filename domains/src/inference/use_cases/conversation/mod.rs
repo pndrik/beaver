@@ -4,7 +4,7 @@
 use crate::{
     core::models::{AppContext, AppError},
     inference::{Inference, models::Conversation},
-    skills::{Skills, models::Skill, use_cases::subagent},
+    tools::{Tools, models::Tool, use_cases::subagent},
 };
 
 const PROMPT: &str = include_str!("prompt.md");
@@ -14,25 +14,25 @@ impl Inference {
         &self,
         ctx: &AppContext,
         agent_name: &str,
-        skills: &Skills,
+        tools: &Tools,
     ) -> Result<Conversation, AppError> {
         let agent = self.agent_provider.get(ctx, agent_name).await?;
 
-        let mut skills_found = skills.list_all(ctx).await?;
+        let mut tools_found = tools.list_all(ctx).await?;
 
-        skills_found.push(Skill {
+        tools_found.push(Tool {
             name: subagent::NAME.to_string(),
             description: subagent::DESCRIPTION.to_string(),
-            parameters: subagent::schema(ctx).await?,
+            schema: subagent::schema(ctx).await?,
         });
 
-        let skills_filtered = skills_found
+        let tools_filtered = tools_found
             .iter()
-            .filter(|s| agent.permissions.has_skill_permission(&s.name) || s.name == "subagent")
+            .filter(|s| agent.permissions.has_tool_permission(&s.name) || s.name == "subagent")
             .cloned()
-            .collect::<Vec<Skill>>();
+            .collect::<Vec<Tool>>();
 
-        let conversation = Conversation::new(PROMPT.to_string(), agent, skills_filtered);
+        let conversation = Conversation::new(PROMPT.to_string(), agent, tools_filtered);
 
         Ok(conversation)
     }

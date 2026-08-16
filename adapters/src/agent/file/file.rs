@@ -20,7 +20,7 @@ pub(super) fn list_directories(ctx: &AppContext, path: &str) -> Result<Vec<Strin
         })?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.is_dir())
+        .filter(|p| p.is_dir() || (p.is_file() && p.extension().map_or(false, |ext| ext == "yaml")))
         .map(|p| p.display().to_string())
         .collect())
 }

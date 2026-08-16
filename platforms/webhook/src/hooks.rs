@@ -48,7 +48,7 @@ pub(crate) async fn handler(
         match app
             .domains
             .inference
-            .webhook_call(&ctx, &name, &token, &body, &app.domains.skills)
+            .webhook_call(&ctx, &name, &token, &body, &app.domains.tools)
             .await
         {
             Ok(_) => {}

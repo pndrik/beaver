@@ -3,7 +3,13 @@ FROM rust:1.97.1-alpine3.24@sha256:3c38f3f82c2f3d73da3b38e18d279393a04cb43ddded0
 
 WORKDIR /usr/src/beaver
 COPY . .
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache \
+    musl-dev \
+    build-base \
+    cmake \
+    perl \
+    make \
+    git
 
 RUN cargo build --release
 
@@ -14,7 +20,7 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/src/beaver/target/release/cli /cli
 COPY --from=builder /usr/src/beaver/target/release/webhook /webhook
 
-COPY examples/skills /skills
+COPY examples/tools /tools
 
 WORKDIR /tmp
 WORKDIR /

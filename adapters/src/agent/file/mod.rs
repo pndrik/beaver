@@ -27,25 +27,56 @@ impl File {
             .await
     }
 
-    fn load_agent(&self, ctx: &AppContext, agent_dir: &str) -> Result<Agent, AppError> {
-        let folder_name = agent_dir.split('/').last().unwrap_or("");
-        let config_content = file::read_file(ctx, &format!("{}/config.yaml", agent_dir))?;
-        let mut agent = parse::parse_agent(ctx, &config_content)?;
+    fn load_agent(&self, ctx: &AppContext, agent_path: &str) -> Result<Agent, AppError> {
+        let mut agent: Agent;
+        if agent_path.ends_with(".yaml") {
+            let config_content = file::read_file(ctx, agent_path)?;
+            agent = parse::parse_agent(ctx, &config_content)?;
+        } else {
+            let config_path = format!("{}/config.yaml", agent_path);
+            let config_content = file::read_file(ctx, &config_path)?;
+            agent = parse::parse_agent(ctx, &config_content)?;
 
-        if agent.metadata.name.is_empty() || agent.metadata.name != folder_name {
+            if agent.prompt.is_empty() {
+                let prompt_path = format!("{}/prompt.md", agent_path);
+                agent.prompt = file::read_file(ctx, &prompt_path)?;
+            }
+        }
+
+        let filesystem_name = agent_path
+            .split('/')
+            .last()
+            .ok_or_else(|| {
+                app_error!(
+                    Internal,
+                    "configuration_load_failed",
+                    &format!("Failed to extract agent name from path: {}", agent_path),
+                    ctx.clone()
+                )
+            })?
+            .trim_end_matches(".yaml")
+            .to_string();
+
+        if agent.metadata.name.is_empty() || agent.metadata.name != filesystem_name {
             return Err(app_error!(
                 Internal,
                 "configuration_load_failed",
                 &format!(
                     "Agent name is missing or missmatching in config: {}",
-                    agent_dir
+                    agent_path
                 ),
                 ctx.clone()
             ));
         }
 
-        let prompt = file::read_file(ctx, &format!("{}/prompt.md", agent_dir))?;
-        agent.prompt = prompt;
+        if agent.prompt.is_empty() {
+            return Err(app_error!(
+                Internal,
+                "configuration_load_failed",
+                &format!("Agent prompt is missing in config: {}", agent_path),
+                ctx.clone()
+            ));
+        }
 
         Ok(agent)
     }
@@ -72,6 +103,10 @@ impl AgentProvider for File {
 
     async fn get(&self, ctx: &AppContext, name: &str) -> Result<Agent, AppError> {
         let agents_dir = self.get_agents_dir(ctx).await?;
-        self.load_agent(ctx, &format!("{}/{}", agents_dir, name))
+
+        match self.load_agent(ctx, &format!("{}/{}", agents_dir, name)) {
+            Ok(agent) => Ok(agent),
+            Err(_) => self.load_agent(ctx, &format!("{}/{}.yaml", agents_dir, name)),
+        }
     }
 }

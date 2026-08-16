@@ -6,10 +6,7 @@ metadata:
   model:
     name: gemini-3-flash
 permissions:
-  skills:
+  tools:
     - name: file
-      roles: [list, read, write, delete, mkdir]
-      confirmation_required: false
       scopes:
         - AI/
-  workflows: []

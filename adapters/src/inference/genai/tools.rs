@@ -8,7 +8,7 @@ use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
     inference::models::Conversation,
-    skills::models::Call as SkillCall,
+    tools::models::Call,
 };
 
 impl GenAi {
@@ -18,26 +18,26 @@ impl GenAi {
         conversation: &Conversation,
     ) -> Result<Vec<Tool>, AppError> {
         conversation
-            .skills
+            .tools
             .iter()
-            .map(|skill| {
-                let schema = skill.parameters.to_json_value(ctx)?;
+            .map(|tool| {
+                let schema = tool.schema.to_json_value(ctx)?;
 
-                Ok(Tool::new(&skill.name)
-                    .with_description(&skill.description)
+                Ok(Tool::new(&tool.name)
+                    .with_description(&tool.description)
                     .with_schema(schema))
             })
             .collect::<Result<Vec<Tool>, AppError>>()
     }
 
-    pub(super) fn tool_calls_to_skill_calls(
+    pub(super) fn tool_calls_to_tool_calls(
         &self,
         ctx: &AppContext,
         tool_calls: Vec<ToolCall>,
-    ) -> Result<Vec<SkillCall>, AppError> {
-        let mut skill_calls: Vec<SkillCall> = vec![];
+    ) -> Result<Vec<Call>, AppError> {
+        let mut calls: Vec<Call> = vec![];
         for tool_call in &tool_calls {
-            skill_calls.push(SkillCall {
+            calls.push(Call {
                 name: tool_call.fn_name.clone(),
                 arguments: serde_json::from_value(tool_call.fn_arguments.clone()).map_err(|e| {
                     app_error!(
@@ -50,6 +50,6 @@ impl GenAi {
             });
         }
 
-        Ok(skill_calls)
+        Ok(calls)
     }
 }

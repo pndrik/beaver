@@ -11,7 +11,7 @@ use app_domains::{
         models::{Conversation, Model, Options},
         traits::InferenceProvider,
     },
-    skills::models::Call as SkillCall,
+    tools::models::Call as SkillCall,
 };
 
 mod helpers;
