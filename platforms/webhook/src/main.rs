@@ -65,14 +65,17 @@ async fn main() {
         .await
         .expect("Failed to bind to address");
 
-    let router = Router::new()
-        .route("/healthz", any(|| async { "OK" }))
+    let app_router = Router::new()
         .route("/hooks/{name}", any(hooks::handler))
         .with_state(application.clone())
         .layer(middleware::from_fn_with_state(
             application.clone(),
             context_middleware,
         ));
+
+    let router = Router::new()
+        .route("/healthz", any(|| async { "OK" }))
+        .merge(app_router);
 
     axum::serve(listener, router).await.unwrap();
 }

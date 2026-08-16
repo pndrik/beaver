@@ -1,3 +1,6 @@
+// Copyright 2026 Patrick Hunziker
+// Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
+
 use base64::prelude::*;
 use boa_engine::{Context, JsNativeError, JsResult, JsString, JsValue, NativeFunction, js_string};
 

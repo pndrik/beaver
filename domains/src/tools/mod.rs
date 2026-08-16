@@ -1,3 +1,6 @@
+// Copyright 2026 Patrick Hunziker
+// Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
+
 use std::sync::Arc;
 
 use crate::core::models::AppError;

@@ -4,7 +4,7 @@
 
 I built Beaver as I was in need of a solution, allowing me to securely and flexibly define server side AI assisted workflows automating some of the repeated work I do. Many of the existing solutions I found were either client side only, highly insecure, expensive proprietary SaaS or AI spaghetti code.
 
-At the time Beaver allows you to define AI agents in YAML, which can be either triggered via CLI or a webhook. The focus is on autonomous agents that can call tools all on their own but without jeopardizing security in any way. There is a handful of embedded which can be extended with JavaScript or external MCP servers. The agents can use multiple LLM providers (currently Anthropic or OpenCode Zen as desired).
+At the time Beaver allows you to define AI agents in YAML, which can be either triggered via CLI or a webhook. The focus is on autonomous agents that can call tools all on their own but without jeopardizing security in any way. There is a handful of embedded tools which can be extended with JavaScript or external MCP servers. The agents can use multiple LLM providers (currently Anthropic or OpenCode Zen).
 
 ## Features
 
