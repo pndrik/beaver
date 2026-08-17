@@ -19,16 +19,15 @@ impl Inference {
         let agent = self.agent_provider.get(ctx, agent_name).await?;
 
         let mut tools_found = tools.list_all(ctx).await?;
-
-        tools_found.push(Tool {
-            name: subagent::NAME.to_string(),
-            description: subagent::DESCRIPTION.to_string(),
-            schema: subagent::schema(ctx).await?,
-        });
+        tools_found.extend(subagent::tools(ctx).await?);
 
         let tools_filtered = tools_found
             .iter()
-            .filter(|s| agent.permissions.has_tool_permission(&s.name) || s.name == "subagent")
+            .filter(|s| {
+                agent.permissions.has_tool_permission(&s.name)
+                    || s.name == subagent::LIST
+                    || s.name == subagent::INVOKE
+            })
             .cloned()
             .collect::<Vec<Tool>>();
 

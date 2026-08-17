@@ -11,6 +11,7 @@ use crate::{
     tools::{
         Tools,
         models::{Call, ToolPermission},
+        use_cases::subagent,
     },
 };
 
@@ -54,6 +55,7 @@ impl Tools {
         &self,
         ctx: &AppContext,
         conversation: &mut Conversation,
+        inference: &Inference,
         call: &Call,
     ) -> Result<(), AppError> {
         ctx.logger
@@ -135,6 +137,30 @@ impl Tools {
             return Ok(());
         }
 
+        if call.name == subagent::LIST || call.name == subagent::INVOKE {
+            if let Err(err) = self
+                .call_subagent_tool(ctx, conversation, permissions, call, inference)
+                .await
+            {
+                ctx.logger
+                    .warn(
+                        ctx,
+                        &format!("Tool '{}' failed with: {}", call.name, err.internal_message),
+                    )
+                    .await;
+                add_tool_message_to_conversation(
+                    ctx,
+                    conversation,
+                    call,
+                    "Error",
+                    &err.internal_message,
+                )
+                .await?
+            }
+
+            return Ok(());
+        }
+
         ctx.logger
             .warn(ctx, &format!("Tool '{}' not found", call.name))
             .await;
@@ -152,32 +178,11 @@ impl Tools {
         &self,
         ctx: &AppContext,
         conversation: &mut Conversation,
-        calls: Vec<Call>,
-    ) -> Result<(), AppError> {
-        for call in calls {
-            self.call(ctx, conversation, &call).await?;
-        }
-
-        Ok(())
-    }
-
-    pub async fn call_many_with_subagent(
-        &self,
-        ctx: &AppContext,
-        conversation: &mut Conversation,
         inference: &Inference,
         calls: Vec<Call>,
     ) -> Result<(), AppError> {
         for call in calls {
-            if call.name == "subagent" {
-                let permissions =
-                    get_permission_for_tool(ctx, &conversation.agent.permissions, &call.name)?;
-                self.call_subagent_tool(ctx, conversation, permissions, &call, inference)
-                    .await?;
-                continue;
-            }
-
-            self.call(ctx, conversation, &call).await?;
+            self.call(ctx, conversation, inference, &call).await?;
         }
 
         Ok(())

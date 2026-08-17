@@ -7,9 +7,6 @@ metadata:
     name: claude-opus-4-8
 permissions:
   tools:
-    - name: subagent
-      scopes:
-        - worker
     - name: ^git_.*$
     - name: ^file_.*$
     - name: js_bitbucket_pr_create

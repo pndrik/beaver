@@ -7,8 +7,10 @@ metadata:
     name: claude-fable-5
 permissions:
   tools:
-    - name: subagent
+    - name: ^subagent_.*$
       scopes:
+        - _list
+        - _invoke
         - worker
     - name: file_delete
     - name: file_mkdir

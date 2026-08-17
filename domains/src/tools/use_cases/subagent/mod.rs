@@ -2,30 +2,29 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use crate::{
-    app_error,
     core::models::{AppContext, AppError},
     inference::{Inference, models::Conversation},
     tools::{
         Tools,
-        models::{Call, ToolPermission},
+        models::{Call, Tool, ToolPermission},
     },
 };
 
-pub const NAME: &str = "subagent";
-pub const DESCRIPTION: &str = "A tool for talking to subagents.";
-const MAX_SUBAGENT_ITERATIONS: usize = 20;
+pub(crate) const LIST: &str = "subagent_list";
+pub(crate) const INVOKE: &str = "subagent_invoke";
+pub(crate) const LEAVE: &str = "subagent_leave";
+const MAX_SUBAGENT_ITERATIONS: usize = 50;
 
-mod arguments;
-use arguments::*;
+mod traits;
 
-mod join;
-use join::*;
+mod tool_set;
+use tool_set::SubagentToolSet;
 
-mod list;
-use list::*;
+mod tools;
 
-mod schema;
-pub(crate) use schema::*;
+fn tool_set() -> SubagentToolSet {
+    SubagentToolSet::new(vec![Box::new(tools::List), Box::new(tools::Invoke)])
+}
 
 impl Tools {
     pub async fn call_subagent_tool(
@@ -36,25 +35,12 @@ impl Tools {
         input: &Call,
         inference: &Inference,
     ) -> Result<(), AppError> {
-        let arguments = tool_call_to_arguments(ctx, input)?;
-
-        match arguments.action.as_str() {
-            "list" => {
-                list(
-                    ctx,
-                    conversation,
-                    permissions,
-                    inference.agent_provider.clone(),
-                )
-                .await
-            }
-            "join" => join(ctx, conversation, permissions, &arguments, self, inference).await,
-            other => Err(app_error!(
-                Validation,
-                "invalid_action",
-                &format!("Invalid action: {}", other),
-                ctx.clone()
-            )),
-        }
+        tool_set()
+            .call(ctx, conversation, permissions, input, self, inference)
+            .await
     }
+}
+
+pub(crate) async fn tools(ctx: &AppContext) -> Result<Vec<Tool>, AppError> {
+    tool_set().list(ctx).await
 }

@@ -1,7 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
 use crate::{
     app_error,
@@ -11,10 +11,10 @@ use crate::{
         models::{Conversation, Model, Options},
         traits::InferenceProvider,
     },
-    tools::Tools,
+    tools::{Tools, use_cases::subagent},
 };
 
-const MAX_INFERENCE_TOOL_ITERATIONS: usize = 25;
+const MAX_INFERENCE_TOOL_ITERATIONS: usize = 50;
 
 async fn find_inference_provider(
     ctx: &AppContext,
@@ -36,92 +36,74 @@ async fn find_inference_provider(
 }
 
 impl Inference {
+    fn poll<'a>(
+        &'a self,
+        ctx: &'a AppContext,
+        conversation: &'a mut Conversation,
+        tools: &'a Tools,
+        leave_tool: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, AppError>> + Send + 'a>> {
+        Box::pin(async move {
+            let inference_provider = find_inference_provider(
+                ctx,
+                &self.inference_providers,
+                &conversation.agent.model(),
+            )
+            .await?;
+            let options = Options::default();
+
+            for _ in 0..MAX_INFERENCE_TOOL_ITERATIONS {
+                let tool_calls = inference_provider
+                    .infer(ctx, &options, conversation)
+                    .await?;
+
+                let Some(latest_message) = conversation.get_latest_message() else {
+                    break;
+                };
+
+                if tool_calls.is_empty() {
+                    if !latest_message.is_assistant() {
+                        return Err(app_error!(
+                            Internal,
+                            "invalid_response_format",
+                            "Latest message is not from the assistant and there were no tool calls.",
+                            ctx.clone()
+                        ));
+                    }
+
+                    return Ok(false);
+                }
+
+                if let Some(sentinel) = leave_tool {
+                    if tool_calls.iter().any(|call| call.name == sentinel) {
+                        return Ok(true);
+                    }
+                }
+
+                tools.call_many(ctx, conversation, self, tool_calls).await?;
+            }
+
+            Ok(false)
+        })
+    }
+
     pub async fn infer(
         &self,
         ctx: &AppContext,
         conversation: &mut Conversation,
         tools: &Tools,
     ) -> Result<(), AppError> {
-        let inference_provider =
-            find_inference_provider(ctx, &self.inference_providers, &conversation.agent.model())
-                .await?;
-        let options = Options::default();
-
-        for _ in 0..MAX_INFERENCE_TOOL_ITERATIONS {
-            let tool_calls = inference_provider
-                .infer(ctx, &options, conversation)
-                .await?;
-
-            let Some(latest_message) = conversation.get_latest_message() else {
-                break;
-            };
-
-            if tool_calls.is_empty() {
-                if !latest_message.is_assistant() {
-                    return Err(app_error!(
-                        Internal,
-                        "invalid_response_format",
-                        "Latest message is not from the assistant and there were no tool calls.",
-                        ctx.clone()
-                    ));
-                }
-
-                return Ok(());
-            }
-
-            if tool_calls.len() > 0 {
-                tools
-                    .call_many_with_subagent(ctx, conversation, &self, tool_calls)
-                    .await?;
-            }
-        }
-
+        self.poll(ctx, conversation, tools, None).await?;
         Ok(())
     }
 
-    // We need this for conversations with subagents as rust does not allow cyclic dependencies
-    pub async fn infer_no_subagent(
+    pub async fn infer_until_leave(
         &self,
         ctx: &AppContext,
         conversation: &mut Conversation,
         tools: &Tools,
     ) -> Result<bool, AppError> {
-        let inference_provider =
-            find_inference_provider(ctx, &self.inference_providers, &conversation.agent.model())
-                .await?;
-        let options = Options::default();
-
-        for _ in 0..MAX_INFERENCE_TOOL_ITERATIONS {
-            let tool_calls = inference_provider
-                .infer(ctx, &options, conversation)
-                .await?;
-
-            let Some(latest_message) = conversation.get_latest_message() else {
-                break;
-            };
-
-            if tool_calls.is_empty() {
-                if !latest_message.is_assistant() {
-                    return Err(app_error!(
-                        Internal,
-                        "invalid_response_format",
-                        "Latest message is not from the assistant and there were no tool calls.",
-                        ctx.clone()
-                    ));
-                }
-
-                return Ok(false);
-            }
-
-            if tool_calls.iter().any(|call| call.name == "subagent_leave") {
-                return Ok(true);
-            }
-
-            if tool_calls.len() > 0 {
-                tools.call_many(ctx, conversation, tool_calls).await?;
-            }
-        }
-
-        Ok(false)
+        self.poll(ctx, conversation, tools, Some(subagent::LEAVE))
+            .await
     }
 }
