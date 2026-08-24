@@ -104,9 +104,11 @@ impl AgentProvider for File {
     async fn get(&self, ctx: &AppContext, name: &str) -> Result<Agent, AppError> {
         let agents_dir = self.get_agents_dir(ctx).await?;
 
-        match self.load_agent(ctx, &format!("{}/{}", agents_dir, name)) {
-            Ok(agent) => Ok(agent),
-            Err(_) => self.load_agent(ctx, &format!("{}/{}.yaml", agents_dir, name)),
+        let yaml_path = format!("{}/{}.yaml", agents_dir, name);
+        if file::file_exists(&yaml_path) {
+            return self.load_agent(ctx, &yaml_path);
         }
+
+        self.load_agent(ctx, &format!("{}/{}", agents_dir, name))
     }
 }

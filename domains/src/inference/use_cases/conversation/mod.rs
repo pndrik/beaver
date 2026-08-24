@@ -3,7 +3,10 @@
 
 use crate::{
     core::models::{AppContext, AppError},
-    inference::{Inference, models::Conversation},
+    inference::{
+        Inference,
+        models::{Conversation, Message},
+    },
     tools::{Tools, models::Tool, use_cases::subagent},
 };
 
@@ -24,14 +27,22 @@ impl Inference {
         let tools_filtered = tools_found
             .iter()
             .filter(|s| {
-                agent.permissions.has_tool_permission(&s.name)
+                agent.tools.has_tool_permission(&s.name)
                     || s.name == subagent::LIST
                     || s.name == subagent::INVOKE
             })
             .cloned()
             .collect::<Vec<Tool>>();
 
-        let conversation = Conversation::new(PROMPT.to_string(), agent, tools_filtered);
+        let system_caching = match agent.inference.caching.system.clone() {
+            Some(caching) => caching,
+            None => agent.inference.caching.default.clone(),
+        };
+        let system_prompt = Message::system(
+            PROMPT.to_string() + "\n\n---\n# Prompt\n" + &agent.prompt,
+            &system_caching,
+        );
+        let conversation = Conversation::new(system_prompt, agent, tools_filtered);
 
         Ok(conversation)
     }

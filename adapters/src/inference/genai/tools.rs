@@ -3,7 +3,7 @@
 
 use genai::chat::{Tool, ToolCall};
 
-use super::GenAi;
+use super::{GenAi, utils::convert_cache_control};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
@@ -17,17 +17,30 @@ impl GenAi {
         ctx: &AppContext,
         conversation: &Conversation,
     ) -> Result<Vec<Tool>, AppError> {
-        conversation
-            .tools
+        let caching = &conversation.agent.inference.caching;
+        let cache_control =
+            convert_cache_control(caching.system.as_ref().unwrap_or(&caching.default));
+
+        let mut tools_sorted = conversation.tools.clone();
+        tools_sorted.sort_by(|a, b| a.name.cmp(&b.name));
+
+        let mut tools = tools_sorted
             .iter()
             .map(|tool| {
                 let schema = tool.schema.to_json_value(ctx)?;
-
                 Ok(Tool::new(&tool.name)
                     .with_description(&tool.description)
                     .with_schema(schema))
             })
-            .collect::<Result<Vec<Tool>, AppError>>()
+            .collect::<Result<Vec<Tool>, AppError>>()?;
+
+        if let Some(cache_level) = cache_control
+            && let Some(last_tool) = tools.last_mut()
+        {
+            last_tool.cache_control = Some(cache_level);
+        }
+
+        Ok(tools)
     }
 
     pub(super) fn tool_calls_to_tool_calls(

@@ -17,6 +17,7 @@ mod client;
 mod options;
 mod request;
 mod tools;
+mod utils;
 
 pub struct GenAi {
     configuration_key_endpoint: String,
@@ -65,6 +66,19 @@ impl InferenceProvider for GenAi {
                     ctx.clone()
                 )
             })?;
+
+        let usage = &chat_response.usage;
+        let details = usage.prompt_tokens_details.as_ref();
+        ctx.logger
+            .trace(
+                ctx,
+                &format!(
+                    "rust-genai: Inference request completed. total_tokens: {}, cached_tokens: {}",
+                    usage.total_tokens.unwrap_or(0),
+                    details.and_then(|d| d.cached_tokens).unwrap_or(0),
+                ),
+            )
+            .await;
 
         if let Some(mut assistant_answer) = chat_response.first_text() {
             // OpenAI response does not respect stop support, so we need to manually truncate the response if stop sequences are provided

@@ -3,10 +3,10 @@ metadata:
   name: worker
   display_name: Bert
   description: A worker agent that performs tasks assigned by the conductor.
-  model:
-    name: gemini-3-flash
-permissions:
-  tools:
+inference:
+  model: gemini-3-flash
+tools:
+  permissions:
     - name: file
       scopes:
         - AI/

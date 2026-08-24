@@ -1,6 +1,9 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Options {
     pub max_tokens: u64,
     pub temperature: f64,
@@ -25,14 +28,19 @@ impl Options {
             stop_sequences,
         }
     }
+}
 
-    pub fn default() -> Self {
-        Self::new(2048, -1.0, -1.0, ReasoningEffort::Medium, vec![])
+impl Default for Options {
+    fn default() -> Self {
+        Self::new(4096, -1.0, -1.0, ReasoningEffort::Medium, vec![])
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "lowercase")]
 pub enum ReasoningEffort {
     Low,
+    #[default]
     Medium,
     High,
     Max,

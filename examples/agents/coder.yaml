@@ -3,10 +3,10 @@ metadata:
   name: coder
   display_name: Jack
   description: The coder writes code and pushes it to the Git repository.
-  model:
-    name: claude-opus-4-8
-permissions:
-  tools:
+inference:
+  model: claude-opus-4-8
+tools:
+  permissions:
     - name: ^git_.*$
     - name: ^file_.*$
     - name: js_bitbucket_pr_create

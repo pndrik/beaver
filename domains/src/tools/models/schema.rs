@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::app_error;
 use crate::core::models::{AppContext, AppError};
@@ -41,7 +41,7 @@ pub struct SchemaField {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub required: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub properties: Option<HashMap<String, SchemaField>>,
+    pub properties: Option<BTreeMap<String, SchemaField>>,
 }
 
 impl SchemaField {
@@ -133,7 +133,7 @@ impl SchemaField {
             ));
         }
         if self.properties.is_none() {
-            self.properties = Some(HashMap::new());
+            self.properties = Some(BTreeMap::new());
         }
         if required {
             if self.required.is_none() {
@@ -160,7 +160,7 @@ pub struct Schema {
     #[serde(default)]
     pub required: Vec<String>,
     #[serde(default)]
-    pub properties: HashMap<String, SchemaField>,
+    pub properties: BTreeMap<String, SchemaField>,
 }
 
 impl Schema {
@@ -170,7 +170,7 @@ impl Schema {
             description: description.to_string(),
             field_type: SchemaFieldType::Object,
             required: Vec::new(),
-            properties: HashMap::new(),
+            properties: BTreeMap::new(),
         }
     }
 

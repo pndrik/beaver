@@ -10,5 +10,5 @@ pub use schema::*;
 mod tool;
 pub use tool::*;
 
-mod tool_permission;
-pub use tool_permission::*;
+mod tools_configuration;
+pub use tools_configuration::*;

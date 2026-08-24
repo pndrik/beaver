@@ -3,10 +3,13 @@ metadata:
   name: conductor
   display_name: Gary
   description: The conductor talks to the human, clarifies the task, and delegates it to the worker.
-  model:
-    name: claude-fable-5
-permissions:
-  tools:
+inference:
+  model: claude-fable-5
+  caching:
+    system: 1h
+    default: 5min
+tools:
+  permissions:
     - name: ^subagent_.*$
       scopes:
         - _list

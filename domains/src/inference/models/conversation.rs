@@ -8,7 +8,7 @@ use crate::tools::models::Tool;
 type Callback = Box<dyn Fn(Message) + Send + Sync>;
 
 pub struct Conversation {
-    system_prompt: String,
+    system_prompt: Message,
 
     pub agent: Agent,
     pub tools: Vec<Tool>,
@@ -18,18 +18,24 @@ pub struct Conversation {
 }
 
 impl Conversation {
-    pub fn new(system_prompt: String, agent: Agent, tools: Vec<Tool>) -> Self {
-        Self {
+    pub fn new(system_prompt: Message, agent: Agent, tools: Vec<Tool>) -> Self {
+        let mut conversation = Self {
             system_prompt,
             agent,
-            tools,
+            tools: vec![],
             messages: vec![],
             subscribers: vec![],
+        };
+
+        for tool in tools {
+            conversation.add_tool(tool);
         }
+
+        conversation
     }
 
-    pub fn prompt(&self) -> String {
-        self.system_prompt.clone() + "\n\n---\n# Prompt\n" + &self.agent.prompt
+    pub fn prompt(&self) -> &Message {
+        &self.system_prompt
     }
 
     pub fn add_message(&mut self, message: Message) {
@@ -41,13 +47,24 @@ impl Conversation {
     }
 
     pub fn add_assistant_message(&mut self, name: String, display_name: String, content: String) {
-        self.add_message(Message::assistant(name, display_name, content));
+        self.add_message(Message::assistant(
+            name,
+            display_name,
+            content,
+            &self.agent.inference.caching.default,
+        ));
     }
     pub fn add_user_message(&mut self, content: String) {
-        self.add_message(Message::user(content));
+        self.add_message(Message::user(
+            content,
+            &self.agent.inference.caching.default,
+        ));
     }
     pub fn add_tool_message(&mut self, content: String) {
-        self.add_message(Message::tool(content));
+        self.add_message(Message::tool(
+            content,
+            &self.agent.inference.caching.default,
+        ));
     }
 
     pub fn messages(&self) -> &[Message] {
@@ -71,5 +88,14 @@ impl Conversation {
 
     pub fn subscribe(&mut self, callback: Callback) {
         self.subscribers.push(callback);
+    }
+
+    pub fn add_tool(&mut self, tool: Tool) {
+        self.remove_tool(&tool.name);
+        self.tools.push(tool);
+    }
+
+    pub fn remove_tool(&mut self, tool_name: &str) {
+        self.tools.retain(|tool| tool.name != tool_name);
     }
 }

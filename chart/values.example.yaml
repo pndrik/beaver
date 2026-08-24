@@ -38,14 +38,13 @@ agents:
       name: reviewer
       display_name: Reviewer
       description: The reviewer reviews pull requests and provides feedback.
-      model:
-        name: claude-fable-5
-    permissions:
-      tools:
+    inference:
+      model: claude-fable-5
+    tools:
+      permissions:
         - name: js_bitbucket_pr_comment
         - name: js_bitbucket_pr_diff
         - name: js_bitbucket_pr_get
-      workflows: []
     prompt: |
       Your task is to review pull requests and provide feedback.
 

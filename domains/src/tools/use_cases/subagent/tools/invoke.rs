@@ -111,10 +111,9 @@ impl SubagentTool for Invoke {
             .filter(|s| s.name == subagent::LIST || s.name == subagent::INVOKE)
             .cloned()
             .collect::<Vec<_>>();
-        conversation
-            .tools
-            .retain(|s| s.name != subagent::LIST && s.name != subagent::INVOKE);
-        conversation.tools.push(leave::tool());
+        conversation.remove_tool(subagent::LIST);
+        conversation.remove_tool(subagent::INVOKE);
+        conversation.add_tool(leave::tool());
 
         let mut subagent_conversation = inference
             .new_conversation(ctx, &arguments.name, tools)
@@ -138,8 +137,10 @@ impl SubagentTool for Invoke {
                 .infer_until_leave(ctx, conversation, tools)
                 .await?;
             if left {
-                conversation.tools.retain(|s| s.name != subagent::LEAVE);
-                conversation.tools.extend(subagent_tools);
+                conversation.remove_tool(subagent::LEAVE);
+                for tool in subagent_tools {
+                    conversation.add_tool(tool);
+                }
 
                 conversation.add_tool_message(format!(
                     "The subagent '{}' has left the conversation.",

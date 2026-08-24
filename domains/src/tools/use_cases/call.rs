@@ -4,13 +4,10 @@
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::{
-        Inference,
-        models::{AgentPermissions, Conversation},
-    },
+    inference::{Inference, models::Conversation},
     tools::{
         Tools,
-        models::{Call, ToolPermission},
+        models::{Call, ToolPermission, ToolsConfiguration},
         use_cases::subagent,
     },
 };
@@ -35,10 +32,10 @@ async fn add_tool_message_to_conversation(
 
 fn get_permission_for_tool(
     ctx: &AppContext,
-    permissions: &AgentPermissions,
+    tools_configuration: &ToolsConfiguration,
     tool_name: &str,
 ) -> Result<ToolPermission, AppError> {
-    permissions
+    tools_configuration
         .get_permission_for_tool(tool_name)
         .ok_or_else(|| {
             app_error!(
@@ -68,30 +65,30 @@ impl Tools {
             )
             .await;
 
-        let permissions =
-            match get_permission_for_tool(ctx, &conversation.agent.permissions, &call.name) {
-                Ok(p) => p,
-                Err(err) => {
-                    ctx.logger
-                        .warn(
-                            ctx,
-                            &format!(
-                                "Agent '{}' has no permission to access tool '{}'.",
-                                conversation.agent.metadata.name, call.name
-                            ),
-                        )
-                        .await;
-                    add_tool_message_to_conversation(
+        let permissions = match get_permission_for_tool(ctx, &conversation.agent.tools, &call.name)
+        {
+            Ok(p) => p,
+            Err(err) => {
+                ctx.logger
+                    .warn(
                         ctx,
-                        conversation,
-                        call,
-                        "Error",
-                        &err.internal_message,
+                        &format!(
+                            "Agent '{}' has no permission to access tool '{}'.",
+                            conversation.agent.metadata.name, call.name
+                        ),
                     )
-                    .await?;
-                    return Ok(());
-                }
-            };
+                    .await;
+                add_tool_message_to_conversation(
+                    ctx,
+                    conversation,
+                    call,
+                    "Error",
+                    &err.internal_message,
+                )
+                .await?;
+                return Ok(());
+            }
+        };
 
         for provider in &self.tools_providers {
             let tool = match provider.get(ctx, &call.name).await {

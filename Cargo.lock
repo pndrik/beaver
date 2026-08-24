@@ -1095,11 +1095,11 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.7.0-beta.9"
+version = "0.7.0-beta.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2fec4a7c740c16ee0d86cf87476dd6a6a1945aeab45a8548bf8fc630504ec79"
+checksum = "5384b6886a7538f657907d9d4d832a45f96dfd04a029713306c1cde5cea38991"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.0",
  "bytes",
  "derive_more",
  "eventsource-stream",
@@ -2839,6 +2839,7 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
+ "indexmap 2.14.0",
  "itoa",
  "memchr",
  "serde",

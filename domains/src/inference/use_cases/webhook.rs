@@ -47,7 +47,7 @@ impl Inference {
                 ctx.logger
                     .trace(
                         ctx,
-                        &format!("[{}]: {}", message.display_name, message.content),
+                        &format!("[{}]: {}", message.agent_name, message.content),
                     )
                     .await;
             }

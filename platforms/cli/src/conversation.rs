@@ -23,7 +23,7 @@ pub async fn run_conversation(
         if message.message_type != MessageType::Assistant {
             return;
         }
-        println!("[{}]: {}", message.display_name, message.content);
+        println!("[{}]: {}", message.agent_display_name, message.content);
     }));
 
     loop {
@@ -44,8 +44,9 @@ pub async fn run_conversation(
             println!("--- Conversation Dump ---");
             for message in conversation.messages() {
                 let name = match message.message_type {
+                    MessageType::System => "System",
                     MessageType::User => "You",
-                    MessageType::Assistant => message.display_name.as_str(),
+                    MessageType::Assistant => message.agent_display_name.as_str(),
                     MessageType::Tool => "Tool",
                 };
                 println!("> [{}]: {}", name, message.content);

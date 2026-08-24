@@ -35,3 +35,7 @@ pub(super) fn read_file(ctx: &AppContext, path: &str) -> Result<String, AppError
         )
     })
 }
+
+pub(super) fn file_exists(path: &str) -> bool {
+    fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
+}
