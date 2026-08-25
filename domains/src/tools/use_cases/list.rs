@@ -3,7 +3,7 @@
 
 use crate::{
     core::models::{AppContext, AppError},
-    tools::{Tools, models::Tool},
+    tools::{Tools, models::Tool, use_cases::subagent},
 };
 
 impl Tools {
@@ -12,6 +12,7 @@ impl Tools {
         for provider in &self.tools_providers {
             tools_found.extend(provider.list(ctx).await?);
         }
+        tools_found.extend(subagent::tools(ctx).await?);
 
         Ok(tools_found)
     }

@@ -7,7 +7,7 @@ use crate::{
         Inference,
         models::{Conversation, Message},
     },
-    tools::{Tools, models::Tool, use_cases::subagent},
+    tools::{Tools, models::Tool},
 };
 
 const PROMPT: &str = include_str!("prompt.md");
@@ -21,16 +21,11 @@ impl Inference {
     ) -> Result<Conversation, AppError> {
         let agent = self.agent_provider.get(ctx, agent_name).await?;
 
-        let mut tools_found = tools.list_all(ctx).await?;
-        tools_found.extend(subagent::tools(ctx).await?);
-
-        let tools_filtered = tools_found
+        let tools_filtered = tools
+            .list_all(ctx)
+            .await?
             .iter()
-            .filter(|s| {
-                agent.tools.has_tool_permission(&s.name)
-                    || s.name == subagent::LIST
-                    || s.name == subagent::INVOKE
-            })
+            .filter(|s| agent.tools.has_tool_permission(&s.name))
             .cloned()
             .collect::<Vec<Tool>>();
 

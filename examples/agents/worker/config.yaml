@@ -7,6 +7,4 @@ inference:
   model: gemini-3-flash
 tools:
   permissions:
-    - name: file
-      scopes:
-        - AI/
+    - name: ^git_.*$

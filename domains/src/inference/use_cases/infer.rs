@@ -14,7 +14,7 @@ use crate::{
     tools::{Tools, use_cases::subagent},
 };
 
-const MAX_INFERENCE_TOOL_ITERATIONS: usize = 50;
+const MAX_INFERENCE_TOOL_ITERATIONS: usize = 100;
 
 async fn find_inference_provider(
     ctx: &AppContext,
@@ -82,6 +82,20 @@ impl Inference {
 
                 tools.call_many(ctx, conversation, self, tool_calls).await?;
             }
+
+            ctx.logger
+                .warn(
+                    ctx,
+                    &format!(
+                        "Maximum inference tool iterations ({}) exceeded",
+                        MAX_INFERENCE_TOOL_ITERATIONS
+                    ),
+                )
+                .await;
+            conversation.add_tool_message(format!(
+                "Error: \nMaximum number of tool iterations ({}) exceeded",
+                MAX_INFERENCE_TOOL_ITERATIONS
+            ));
 
             Ok(false)
         })
