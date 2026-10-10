@@ -6,6 +6,7 @@ use axum::{
     extract::{Extension, Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -30,36 +31,40 @@ pub(crate) async fn handler(
 
     let token = token_bearer.or(token_query).unwrap_or_default();
     if token.is_empty() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(Response {
-                success: false,
-                message: "Missing token".to_string(),
-            }),
-        );
+        return unauthorized("Missing token");
     }
 
+    let target = match application
+        .domains
+        .inference
+        .resolve_hook(&ctx, &name, token)
+        .await
+    {
+        Ok(target) => target,
+        Err(_) => return unauthorized("Invalid token"),
+    };
+
+    let query: serde_json::Map<String, Value> = query
+        .into_iter()
+        .filter(|(key, _)| key != "token")
+        .map(|(key, value)| (key, Value::String(value)))
+        .collect();
+    let query = Value::Object(query);
+
     let app = Arc::clone(&application);
-    let ctx = ctx.clone();
-    let name = name.clone();
-    let body = body.clone();
-    let token = token.to_string();
     tokio::spawn(async move {
-        match app
+        if let Err(err) = app
             .domains
             .inference
-            .webhook_call(&ctx, &name, &token, &body, &app.domains.tools)
+            .run_hook(&ctx, &target, &body, &query, &app.domains.tools)
             .await
         {
-            Ok(_) => {}
-            Err(err) => {
-                ctx.logger
-                    .error(
-                        &ctx,
-                        &format!("Webhook call failed: {}", err.internal_message),
-                    )
-                    .await;
-            }
+            ctx.logger
+                .error(
+                    &ctx,
+                    &format!("Hook '{}' failed: {}", name, err.internal_message),
+                )
+                .await;
         }
     });
 
@@ -68,6 +73,16 @@ pub(crate) async fn handler(
         Json(Response {
             success: true,
             message: "Inference started".to_string(),
+        }),
+    )
+}
+
+fn unauthorized(message: &str) -> (StatusCode, Json<Response>) {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(Response {
+            success: false,
+            message: message.to_string(),
         }),
     )
 }

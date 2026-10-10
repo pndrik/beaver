@@ -6,7 +6,7 @@ use http::{HeaderName, HeaderValue};
 use rmcp::{
     RoleClient, ServiceExt,
     model::{
-        CallToolRequestParams, ClientCapabilities, ClientInfo, ContentBlock, Implementation,
+        CallToolRequestParams, ClientCapabilities, ClientConfig, ContentBlock, Implementation,
         InitializeRequestParams,
     },
     service::RunningService,
@@ -125,7 +125,7 @@ impl McpSession {
             StreamableHttpClientTransportConfig::with_uri(self.server.url.clone())
                 .custom_headers(headers);
         let transport = StreamableHttpClientTransport::from_config(transport_config);
-        let client_info = ClientInfo::new(
+        let client_info = ClientConfig::new(
             ClientCapabilities::default(),
             Implementation::new("beaver", "0.0.1"),
         );

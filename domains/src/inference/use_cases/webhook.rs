@@ -4,32 +4,24 @@
 use serde_json::{Value, json};
 
 use crate::{
-    app_error,
     core::models::{AppContext, AppError},
-    inference::{Inference, models::MessageType},
+    inference::{
+        Inference,
+        models::{MessageType, Webhook},
+    },
     tools::Tools,
 };
 
 impl Inference {
-    pub async fn webhook_call(
+    pub async fn webhook_run(
         &self,
         ctx: &AppContext,
-        name: &str,
-        token: &str,
+        hook: &Webhook,
         body: &Value,
+        query: &Value,
         tools: &Tools,
     ) -> Result<(), AppError> {
-        let hook = self.webhook_provider.get(ctx, name).await?;
-        if token != "" && hook.metadata.token != token {
-            return Err(app_error!(
-                Unauthorized,
-                "invalid_credentials",
-                "Invalid token provided for webhook.",
-                ctx.clone()
-            ));
-        }
-
-        let template_values = json!({ "Body": &body, "Ctx": ctx });
+        let template_values = json!({ "Body": body, "Query": query, "Ctx": ctx });
         let prompt = self
             .template_engine
             .render(ctx, &hook.handler.prompt, &template_values)

@@ -11,6 +11,7 @@ use genai::{
 
 use super::GenAi;
 use app_domains::{
+    app_error,
     core::models::{AppContext, AppError},
     inference::models::{Model, ModelAdapter},
 };
@@ -58,13 +59,21 @@ impl GenAi {
             },
         );
 
-        Ok(Client::builder()
+        Client::builder()
             .with_service_target_resolver(target_resolver)
             .with_web_config(
                 WebConfig::default()
                     .with_timeout(Duration::from_secs(90))
                     .with_connect_timeout(Duration::from_secs(5)),
             )
-            .build())
+            .build()
+            .map_err(|e| {
+                app_error!(
+                    Internal,
+                    "inference_failed",
+                    &format!("Failed to build inference client: {}", e),
+                    ctx.clone()
+                )
+            })
     }
 }

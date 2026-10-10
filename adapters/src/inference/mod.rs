@@ -7,5 +7,8 @@ pub use anthropic::*;
 mod genai;
 pub use genai::*;
 
+mod scripted;
+pub use scripted::*;
+
 mod zen;
 pub use zen::*;

@@ -15,6 +15,7 @@ spec:
       annotations:
         checksum/webhooks: {{ include (print $.Template.BasePath "/webhook/secret.yaml") . | sha256sum }}
         checksum/agents: {{ include (print $.Template.BasePath "/secret_agents.yaml") . | sha256sum }}
+        checksum/flows: {{ include (print $.Template.BasePath "/secret_flows.yaml") . | sha256sum }}
         checksum/configuration: {{ include (print $.Template.BasePath "/secret_configuration.yaml") . | sha256sum }}
         checksum/env: {{ include (print $.Template.BasePath "/secret_env.yaml") . | sha256sum }}
     spec:
@@ -37,6 +38,8 @@ spec:
               mountPath: /webhooks
             - name: agents
               mountPath: /agents
+            - name: flows
+              mountPath: /flows
           resources: {{ toYaml .Values.webhook.resources | nindent 12 }}
           ports:
             - containerPort: 8080
@@ -63,3 +66,6 @@ spec:
         - name: agents
           secret:
             secretName: {{ include "chart.fullname" . }}-agents
+        - name: flows
+          secret:
+            secretName: {{ include "chart.fullname" . }}-flows

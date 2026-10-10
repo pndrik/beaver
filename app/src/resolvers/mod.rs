@@ -4,6 +4,9 @@
 mod agent_provider;
 pub(crate) use agent_provider::*;
 
+mod flow_provider;
+pub(crate) use flow_provider::*;
+
 mod inference_providers;
 pub(crate) use inference_providers::*;
 

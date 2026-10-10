@@ -21,6 +21,39 @@ pub enum SchemaFieldType {
     Object,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum SchemaType {
+    Single(SchemaFieldType),
+    Union(Vec<SchemaFieldType>),
+}
+
+impl Default for SchemaType {
+    fn default() -> Self {
+        Self::Single(SchemaFieldType::default())
+    }
+}
+
+impl From<SchemaFieldType> for SchemaType {
+    fn from(field_type: SchemaFieldType) -> Self {
+        Self::Single(field_type)
+    }
+}
+
+impl SchemaType {
+    /// Whether this is exactly `field_type`, not a union containing it.
+    pub fn is(&self, field_type: &SchemaFieldType) -> bool {
+        matches!(self, Self::Single(t) if t == field_type)
+    }
+
+    pub fn allows(&self, field_type: &SchemaFieldType) -> bool {
+        match self {
+            Self::Single(t) => t == field_type,
+            Self::Union(types) => types.contains(field_type),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum SchemaItems {
@@ -31,9 +64,9 @@ pub enum SchemaItems {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SchemaField {
     #[serde(rename = "type", default)]
-    pub field_type: SchemaFieldType,
+    pub field_type: SchemaType,
     #[serde(rename = "enum", skip_serializing_if = "Option::is_none")]
-    pub enumeration: Option<Vec<String>>,
+    pub enumeration: Option<Vec<serde_json::Value>>,
     #[serde(default)]
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -51,8 +84,9 @@ impl SchemaField {
         enumeration: Option<Vec<String>>,
     ) -> Self {
         Self {
-            field_type,
-            enumeration,
+            field_type: field_type.into(),
+            enumeration: enumeration
+                .map(|values| values.into_iter().map(serde_json::Value::String).collect()),
             description: description.to_string(),
             required: None,
             items: None,
@@ -67,9 +101,11 @@ impl SchemaField {
         required: bool,
         field: SchemaField,
     ) -> Result<(), AppError> {
-        match self.field_type {
-            SchemaFieldType::Object => self.add_property(ctx, name, required, field),
-            SchemaFieldType::Array => self.add_item(ctx, field),
+        match &self.field_type {
+            SchemaType::Single(SchemaFieldType::Object) => {
+                self.add_property(ctx, name, required, field)
+            }
+            SchemaType::Single(SchemaFieldType::Array) => self.add_item(ctx, field),
             _ => Err(app_error!(
                 Validation,
                 "internal_error",
@@ -80,7 +116,7 @@ impl SchemaField {
     }
 
     pub fn set_items(&mut self, ctx: &AppContext, field: SchemaField) -> Result<(), AppError> {
-        if self.field_type != SchemaFieldType::Array {
+        if !self.field_type.is(&SchemaFieldType::Array) {
             return Err(app_error!(
                 Validation,
                 "internal_error",
@@ -93,7 +129,7 @@ impl SchemaField {
     }
 
     pub fn add_item(&mut self, ctx: &AppContext, field: SchemaField) -> Result<(), AppError> {
-        if self.field_type != SchemaFieldType::Array {
+        if !self.field_type.is(&SchemaFieldType::Array) {
             return Err(app_error!(
                 Validation,
                 "internal_error",
@@ -124,7 +160,7 @@ impl SchemaField {
         required: bool,
         field: SchemaField,
     ) -> Result<(), AppError> {
-        if self.field_type != SchemaFieldType::Object {
+        if !self.field_type.is(&SchemaFieldType::Object) {
             return Err(app_error!(
                 Validation,
                 "internal_error",

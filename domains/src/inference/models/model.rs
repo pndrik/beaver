@@ -38,12 +38,28 @@ macro_rules! models {
                 }
             }
 
+            /// Claude Opus 4.7 and newer reject custom sampling parameters.
+            fn rejects_sampling(&self) -> bool {
+                matches!(
+                    self,
+                    Model::ClaudeFable5_1
+                        | Model::ClaudeFable5
+                        | Model::ClaudeOpus5_5
+                        | Model::ClaudeOpus5
+                        | Model::ClaudeOpus4_8
+                        | Model::ClaudeOpus4_7
+                        | Model::ClaudeSonnet5_5
+                        | Model::ClaudeSonnet5
+                        | Model::ClaudeHaiku5_5
+                )
+            }
+
             pub fn supports_temperature(&self) -> bool {
-                !matches!(self, Model::ClaudeFable5 | Model::ClaudeSonnet5)
+                !self.rejects_sampling()
             }
 
             pub fn supports_nucleus(&self) -> bool {
-                !matches!(self, Model::ClaudeFable5 | Model::ClaudeSonnet5)
+                !self.rejects_sampling()
             }
 
             pub fn supports_reasoning_effort(&self) -> bool {
@@ -57,34 +73,46 @@ macro_rules! models {
 }
 
 models! {
+    ClaudeFable5_1     => "claude-fable-5-1",      Anthropic;
     ClaudeFable5       => "claude-fable-5",        Anthropic;
+    ClaudeOpus5_5      => "claude-opus-5-5",       Anthropic;
     ClaudeOpus5        => "claude-opus-5",         Anthropic;
     ClaudeOpus4_8      => "claude-opus-4-8",       Anthropic;
     ClaudeOpus4_7      => "claude-opus-4-7",       Anthropic;
     ClaudeOpus4_6      => "claude-opus-4-6",       Anthropic;
     ClaudeOpus4_5      => "claude-opus-4-5",       Anthropic;
     ClaudeOpus4_1      => "claude-opus-4-1",       Anthropic;
+    ClaudeSonnet5_5    => "claude-sonnet-5-5",     Anthropic;
     ClaudeSonnet5      => "claude-sonnet-5",       Anthropic;
     ClaudeSonnet4_6    => "claude-sonnet-4-6",     Anthropic;
     ClaudeSonnet4_5    => "claude-sonnet-4-5",     Anthropic;
     ClaudeSonnet4      => "claude-sonnet-4",       Anthropic;
+    ClaudeHaiku5_5     => "claude-haiku-5-5",      Anthropic;
     ClaudeHaiku4_5     => "claude-haiku-4-5",      Anthropic;
     ClaudeHaiku3_5     => "claude-3-5-haiku",      Anthropic;
 
+    DeepSeek4_1Flash   => "deepseek-v4.1-flash",   OpenAI;
     DeepSeek4Pro       => "deepseek-v4-pro",       OpenAI;
     DeepSeek4Flash     => "deepseek-v4-flash",     OpenAI;
 
     Gemini3_1Pro       => "gemini-3.1-pro",        Gemini;
+    Gemini3_8Flash     => "gemini-3.8-flash",      Gemini;
     Gemini3_7Flash     => "gemini-3.7-flash",      Gemini;
     Gemini3_6Flash     => "gemini-3.6-flash",      Gemini;
     Gemini3_5Flash     => "gemini-3.5-flash",      Gemini;
     Gemini3Flash       => "gemini-3-flash",        Gemini;
     Gemini3_5FlashLite => "gemini-3.5-flash-lite", Gemini;
 
+    GLM5_3             => "glm-5.3",               OpenAI;
+    GLM5_3Flash        => "glm-5.3-flash",         OpenAI;
     GLM5_2             => "glm-5.2",               OpenAI;
     GLM5_1             => "glm-5.1",               OpenAI;
     GLM5               => "glm-5",                 OpenAI;
 
+    GPT6_1Sol          => "gpt-6.1-sol",           OpenAIResp;
+    GPT6Sol            => "gpt-6-sol",             OpenAIResp;
+    GPT6Astra          => "gpt-6-astra",           OpenAIResp;
+    GPT6Luna           => "gpt-6-luna",            OpenAIResp;
     GPT5_6Sol          => "gpt-5.6-sol",           OpenAIResp;
     GPT5_6Terra        => "gpt-5.6-terra",         OpenAIResp;
     GPT5_6Luna         => "gpt-5.6-luna",          OpenAIResp;
@@ -106,10 +134,11 @@ models! {
     GPT5Codex          => "gpt-5-codex",           OpenAIResp;
     GPT5Nano           => "gpt-5-nano",            OpenAIResp;
 
-    Grok4_6            => "grok-4.6",              OpenAI;
-    Grok4_5            => "grok-4.5",              OpenAI;
+    Grok4_7            => "grok-4.7",              OpenAIResp;
+    Grok4_6            => "grok-4.6",              OpenAIResp;
+    Grok4_5            => "grok-4.5",              OpenAIResp;
     Grok4_3            => "grok-4.3",              OpenAI;
-    GrokBuild0_1       => "grok-build-0.1",        OpenAI;
+    GrokBuild0_1       => "grok-build-0.1",        OpenAIResp;
 
     KimiK3             => "kimi-k3",               OpenAI;
     KimiK2_7Code       => "kimi-k2.7-code",        OpenAI;
@@ -120,6 +149,13 @@ models! {
     MiniMaxM2_5        => "minimax-m2.5",          OpenAI;
     MiniMaxM2_7        => "minimax-m2.7",          OpenAI;
 
+    MistralLarge4      => "mistral-large-4",       OpenAI;
+
+    MuseSpark1_3       => "muse-spark-1.3",        OpenAIResp;
+    MuseSpark1_2       => "muse-spark-1.2",        OpenAIResp;
+
+    Qwen3_8Max         => "qwen3.8-max",           OpenAI;
+    Qwen3_8Flash       => "qwen3.8-flash",         Anthropic;
     Qwen3_7Max         => "qwen3.7-max",           Anthropic;
     Qwen3_7Plus        => "qwen3.7-plus",          Anthropic;
     Qwen3_6Plus        => "qwen3.6-plus",          Anthropic;

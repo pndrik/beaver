@@ -8,3 +8,9 @@ async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 regex.workspace = true
+
+[dev-dependencies]
+app-adapters.workspace = true
+tokio.workspace = true
+tempfile = "3.27"
+yaml_serde.workspace = true

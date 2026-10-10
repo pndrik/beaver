@@ -3,3 +3,6 @@
 
 mod file;
 pub use file::*;
+
+mod memory;
+pub use memory::*;

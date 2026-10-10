@@ -4,6 +4,9 @@
 mod agent_provider;
 pub use agent_provider::*;
 
+mod flow_provider;
+pub use flow_provider::*;
+
 mod inference_provider;
 pub use inference_provider::*;
 

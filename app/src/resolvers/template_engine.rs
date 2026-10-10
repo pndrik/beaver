@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use app_adapters::template_engine::TeraTemplateEngine;
+use app_adapters::template_engine::MiniJinjaTemplateEngine;
 use app_domains::{
     core::models::{AppContext, AppError},
     core::traits::TemplateEngine,
@@ -12,5 +12,5 @@ use app_domains::{
 pub async fn template_engine(
     ctx: &AppContext,
 ) -> Result<Arc<dyn TemplateEngine + Send + Sync>, AppError> {
-    Ok(Arc::new(TeraTemplateEngine::new(ctx)))
+    Ok(Arc::new(MiniJinjaTemplateEngine::new(ctx)))
 }

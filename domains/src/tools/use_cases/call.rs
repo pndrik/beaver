@@ -1,13 +1,16 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use std::sync::Arc;
+
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
     inference::{Inference, models::Conversation},
     tools::{
         Tools,
-        models::{Call, ToolPermission, ToolsConfiguration},
+        models::{Call, Tool, ToolPermission, ToolsConfiguration},
+        traits::ToolsProvider,
         use_cases::subagent,
     },
 };
@@ -48,6 +51,51 @@ fn get_permission_for_tool(
 }
 
 impl Tools {
+    async fn find_provider(
+        &self,
+        ctx: &AppContext,
+        tool_name: &str,
+    ) -> Option<(Arc<dyn ToolsProvider + Send + Sync>, Tool)> {
+        for provider in &self.tools_providers {
+            if let Ok(tool) = provider.get(ctx, tool_name).await {
+                return Some((provider.clone(), tool));
+            }
+        }
+
+        None
+    }
+
+    /// Runs a provider tool without an agent or conversation, e.g. for flow steps.
+    pub async fn execute_direct(
+        &self,
+        ctx: &AppContext,
+        permissions: ToolPermission,
+        call: &Call,
+    ) -> Result<String, AppError> {
+        let Some((provider, tool)) = self.find_provider(ctx, &call.name).await else {
+            return Err(app_error!(
+                NotFound,
+                "tool_not_found",
+                &format!("Tool with name '{}' not found", call.name),
+                ctx.clone()
+            ));
+        };
+
+        if !call.validate_arguments(tool.schema) {
+            return Err(app_error!(
+                Validation,
+                "tool_arguments_invalid",
+                &format!(
+                    "Arguments for tool '{}' are invalid please check schema",
+                    call.name
+                ),
+                ctx.clone()
+            ));
+        }
+
+        provider.execute(ctx, permissions, call).await
+    }
+
     pub async fn call(
         &self,
         ctx: &AppContext,
@@ -90,12 +138,7 @@ impl Tools {
             }
         };
 
-        for provider in &self.tools_providers {
-            let tool = match provider.get(ctx, &call.name).await {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
+        if let Some((provider, tool)) = self.find_provider(ctx, &call.name).await {
             if !call.validate_arguments(tool.schema) {
                 add_tool_message_to_conversation(
                     ctx,

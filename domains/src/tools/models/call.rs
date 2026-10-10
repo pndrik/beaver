@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::tools::models::{Schema, SchemaFieldType};
+use crate::tools::models::{Schema, SchemaField, SchemaFieldType};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Call {
@@ -48,15 +48,8 @@ impl Call {
                 return false;
             };
 
-            match (field_schema.field_type.clone(), value) {
-                (SchemaFieldType::String, CallValue::String(_)) => {}
-                (SchemaFieldType::Integer, CallValue::Integer(_)) => {}
-                (SchemaFieldType::Boolean, CallValue::Boolean(_)) => {}
-                (SchemaFieldType::Number, CallValue::Float(_)) => {}
-                (SchemaFieldType::Number, CallValue::Integer(_)) => {}
-                (SchemaFieldType::Array, CallValue::Array(_)) => {}
-                (SchemaFieldType::Object, CallValue::Object(_)) => {}
-                _ => return false,
+            if !field_schema.allows(value) {
+                return false;
             }
         }
 
@@ -74,6 +67,8 @@ pub enum CallValue {
 
     Array(Vec<CallValue>),
     Object(HashMap<String, CallValue>),
+
+    Null,
 }
 impl CallValue {
     pub fn as_string(&self) -> Option<String> {
@@ -98,5 +93,40 @@ impl CallValue {
         } else {
             None
         }
+    }
+}
+
+impl SchemaField {
+    /// Whether `value` has one of the allowed types and, if the field has an
+    /// `enum`, is one of its values. Integers also count as numbers.
+    pub fn allows(&self, value: &CallValue) -> bool {
+        let type_matches = match value {
+            CallValue::String(_) => self.field_type.allows(&SchemaFieldType::String),
+            CallValue::Integer(_) => {
+                self.field_type.allows(&SchemaFieldType::Integer)
+                    || self.field_type.allows(&SchemaFieldType::Number)
+            }
+            CallValue::Float(_) => self.field_type.allows(&SchemaFieldType::Number),
+            CallValue::Boolean(_) => self.field_type.allows(&SchemaFieldType::Boolean),
+            CallValue::Array(_) => self.field_type.allows(&SchemaFieldType::Array),
+            CallValue::Object(_) => self.field_type.allows(&SchemaFieldType::Object),
+            CallValue::Null => self.field_type.allows(&SchemaFieldType::Null),
+        };
+
+        type_matches
+            && self.enumeration.as_ref().is_none_or(|allowed| {
+                let value = serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
+                allowed
+                    .iter()
+                    .any(|candidate| json_equal(candidate, &value))
+            })
+    }
+}
+
+/// JSON equality that compares numbers by value, so `1` equals `1.0`.
+fn json_equal(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a.as_f64(), b.as_f64()) {
+        (Some(x), Some(y)) if a.is_number() && b.is_number() => x == y,
+        _ => a == b,
     }
 }

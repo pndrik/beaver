@@ -17,4 +17,4 @@ handler:
 
     Title: {{ Body.pullrequest.rendered.title.raw }}
     Description:
-    {{ Body.pullrequest.rendered.description.raw | indent(prefix="  ") }}
+    {{ Body.pullrequest.rendered.description.raw | indent(2) }}

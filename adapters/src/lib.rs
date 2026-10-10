@@ -3,6 +3,7 @@
 
 pub mod agent;
 pub mod configuration;
+pub mod flows;
 pub mod inference;
 pub mod logger;
 pub mod template_engine;

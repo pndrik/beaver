@@ -45,6 +45,9 @@ agents:
         - name: js_bitbucket_pr_comment
         - name: js_bitbucket_pr_diff
         - name: js_bitbucket_pr_get
+        - name: file_find
+        - name: file_read
+        - name: file_search
     prompt: |
       Your task is to review pull requests and provide feedback.
 
@@ -70,4 +73,56 @@ webhooks:
 
         Title: {{ Body.pullrequest.rendered.title.raw }}
         Description:
-        {{ Body.pullrequest.rendered.description.raw | indent(prefix="  ") }}
+        {{ Body.pullrequest.rendered.description.raw | indent(2) }}
+
+flows:
+  pr_review_flow:
+    metadata:
+      name: pr_review_flow
+      display_name: PR Review Flow
+      description: Checks out the pull request in a temporary directory and reviews it with the full code base at hand.
+    spec:
+      triggers:
+        webhook:
+          name: pr_review_flow
+          token: "REPLACE_WITH_YOUR_FLOW_TOKEN"
+      steps:
+        - name: clone
+          context:
+            name: review
+            chroot:
+              path: "runs/{{ Ctx.trace_id }}"
+              create_if_missing: true
+              delete: true
+          action:
+            type: tool
+            arguments:
+              tool: git_clone
+              arguments:
+                url: "ssh://git@bitbucket.org:{{ Body.repository.full_name }}.git"
+                path: "/repo"
+        - name: checkout
+          context:
+            name: review
+          action:
+            type: tool
+            arguments:
+              tool: git_checkout
+              arguments:
+                path: "/repo"
+                branch: "{{ Body.pullrequest.source.branch.name }}"
+        - name: review
+          context:
+            name: review
+          action:
+            type: agent
+            arguments:
+              agent: reviewer
+              prompt: |
+                The pull request branch is checked out in /repo, use the file tools to read the surrounding code.
+                Review the changes and provide your feedback as comments on the pull request.
+
+                Workspace: {{ Body.repository.workspace.slug }}
+                Repository: {{ Body.repository.name }}
+                Pull request id: {{ Body.pullrequest.id }}
+                Title: {{ Body.pullrequest.title }}

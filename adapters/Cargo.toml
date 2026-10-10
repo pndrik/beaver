@@ -16,13 +16,13 @@ http.workspace = true
 base64.workspace = true
 chrono.workspace = true
 
-genai = "0.7.0-beta.19"
-config = "0.15.23"
-tera = "2.0.0"
-boa_engine = "0.21.1"
-boa_runtime = "0.21.1"
-boa_gc = "0.21.1"
-rmcp = { version = "3.1.2", features = [
+genai = "0.7.0-rc.4"
+config = "0.15.27"
+minijinja = { version = "3.0.0", features = ["serde"] }
+boa_engine = "0.22.0"
+boa_runtime = "0.22.0"
+boa_gc = "0.22.0"
+rmcp = { version = "3.5.1", features = [
   "client",
   "transport-streamable-http-client-reqwest",
   "auth",
@@ -30,3 +30,6 @@ rmcp = { version = "3.1.2", features = [
 walkdir = "2.5.0"
 git2 = { version = "0.21.0", features = ["https", "ssh", "vendored-libgit2", "vendored-openssl"] }
 ssh2 = { version = "0.9.6", features = ["vendored-openssl"] }
+
+[dev-dependencies]
+tempfile = "3.27"

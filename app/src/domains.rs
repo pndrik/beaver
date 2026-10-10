@@ -17,12 +17,14 @@ async fn get_inference(ctx: &AppContext) -> Result<Inference, AppError> {
     let agent_provider = resolvers::agent_provider(ctx).await?;
     let inference_providers = resolvers::inference_providers(ctx).await?;
     let webhook_provider = resolvers::webhook_provider(ctx).await?;
+    let flow_provider = resolvers::flow_provider(ctx).await?;
     let template_engine = resolvers::template_engine(ctx).await?;
 
     Inference::new(
         agent_provider,
         inference_providers,
         webhook_provider,
+        flow_provider,
         template_engine,
     )
 }

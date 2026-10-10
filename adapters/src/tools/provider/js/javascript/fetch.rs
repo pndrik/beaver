@@ -1,7 +1,9 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use boa_engine::{Context, Finalize, JsData, JsError, JsResult, JsString, Trace, js_error};
+use boa_engine::{
+    Context, Finalize, JsData, JsError, JsObject, JsResult, JsString, Trace, js_error,
+};
 use boa_runtime::fetch::{Fetcher, request::JsRequest, response::JsResponse};
 use regex::Regex;
 use std::{cell::RefCell, rc::Rc};
@@ -76,6 +78,7 @@ impl Fetcher for FilteredFetcher {
     async fn fetch(
         self: Rc<Self>,
         request: JsRequest,
+        _signal: Option<JsObject>,
         _context: &RefCell<&mut Context>,
     ) -> JsResult<JsResponse> {
         let req = request.clone().into_inner();

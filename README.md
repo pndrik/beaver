@@ -10,7 +10,7 @@ At the time Beaver allows you to define AI agents in YAML, which can be either t
 
 - **Multi-Provider/-LLM** — Anthropic, Zen (more to come)
 - **Pluggable Tools** — JavaScript (sandboxed) and MCP servers
-- **Agents & Webhooks as YAML** — no custom DSL, just YAML
+- **Agents, Webhooks & Flows as YAML** — no custom DSL, just YAML
 - **Ships as a container** — Helm chart included
 
 ## Quick start
@@ -61,9 +61,58 @@ handler:
 
 `POST` the webhook payload to `/hooks/pr_review?token=<TOKEN>` and the reviewer agent runs.
 
+### Flow definition
+
+A flow is a pipeline of steps triggered through the same `/hooks/{name}` endpoint. Flows live in `flows.path` (one `<name>.yaml` per flow, `metadata.name` must match the file name) and are re-read on every trigger, so adding, editing or removing a file needs no restart.
+
+```yaml
+metadata:
+  name: pr_review_flow
+  description: Clone and review a PR
+spec:
+  triggers:
+    webhook: { name: pr_review_flow, token: "REPLACE_ME" }
+  steps:
+    - name: clone
+      context:
+        name: work
+        chroot: { path: "runs/{{ Ctx.trace_id }}", create_if_missing: true, delete: true }
+      action:
+        type: tool
+        arguments:
+          tool: git_clone
+          scopes: ["*"]
+          arguments: { url: "{{ Body.repository.links.html.href }}", path: "/repo" }
+    - name: review
+      context: { name: work }
+      action:
+        type: agent
+        arguments:
+          agent: coder
+          prompt: "Review the PR in /repo. Clone said: {{ Steps.clone.output }}"
+```
+
+- **Steps** run in order; the first failing step stops the flow. Step names must be identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`) and unique.
+- **`agent` steps** send the rendered `prompt` to `agent`. **`tool` steps** call `tool` directly with the rendered `arguments` and the given `scopes`, without an LLM.
+- **Contexts** are a conversation plus a working directory. Steps with the same `context.name` share both, so a later agent step continues the earlier conversation and a tool step's result is appended to it. A context can only be used by one agent.
+- **`chroot.path`** is resolved against the global `context.chroot` and must stay inside it. `create_if_missing` creates it, `delete` removes it when the flow ends, whether it succeeded or not. Without `chroot` the global chroot is used, and only the first step of a context decides its chroot.
+- If a webhook and a flow trigger share a name, neither runs. Unknown names and wrong tokens both get `401`.
+
+Prompts, chroot paths and every string in tool `arguments` are [MiniJinja](https://docs.rs/minijinja) templates (no HTML escaping) with these values:
+
+| Variable | Content |
+| --- | --- |
+| `Body` | The webhook payload |
+| `Query` | Query parameters, without `token` |
+| `Ctx` | The request context (`trace_id`, `chroot`) |
+| `Flow` | `{ name }` |
+| `Steps.<step>` | `{ output, context, chroot, messages: [{ type, agent, content }] }` for every step that already ran |
+
+A missing value, at any depth, renders as `<NULL>` and logs a warning naming the path; the flow keeps running. `is defined`, `default(...)` and `{% if %}` still see it as undefined, so `{{ Body.title | default("untitled") }}` works as expected. Syntax errors fail the step. Webhook prompts use the same engine and values (without `Flow` and `Steps`).
+
 ## Helm Chart
 
-The chart in [`chart/`](chart) deploys the webhook server as a Deployment + Service (with an optional Ingress and HPA). Your `configuration.yaml`, agents, and webhooks are supplied as Helm values and rendered into Kubernetes Secrets that get mounted into the pod; changing them triggers a rollout.
+The chart in [`chart/`](chart) deploys the webhook server as a Deployment + Service (with an optional Ingress and HPA). Your `configuration.yaml`, agents, webhooks, and flows are supplied as Helm values and rendered into Kubernetes Secrets that get mounted into the pod; changing them triggers a rollout.
 
 ```sh
 helm install beaver ./chart -f my-values.yaml
@@ -75,12 +124,13 @@ helm install beaver ./chart -f my-values.yaml
 | `configuration` | Beaver's `configuration.yaml` |
 | `agents` | Map of agent name → agent definition, same shape as the [agent definition](#agent-definition) above. |
 | `webhooks` | Map of webhook name → webhook definition, same shape as the [webhook definition](#webhook-definition) above. |
+| `flows` | Map of flow name → flow definition, same shape as the [flow definition](#flow-definition) above. |
 | `env` | Extra environment variables for the container (values are templated). |
 | `ingress.enabled`, `ingress.host` | Expose `/hooks` externally via an Ingress. |
 | `webhook.resources`, `webhook.hpa`, `webhook.securityContext` | Pod resource requests/limits, autoscaling, and security context. |
 | `extraObjects` | Escape hatch for arbitrary additional manifests (string or object, templated). |
 
-[`chart/values.example.yaml`](chart/values.example.yaml) is a full working example — Anthropic as the inference provider, an Atlassian MCP server, Bitbucket/git JS tool config, and the `reviewer` agent + `pr_review` webhook from the [Examples](#examples) above — copy it and adjust as needed.
+[`chart/values.example.yaml`](chart/values.example.yaml) is a full working example — Anthropic as the inference provider, an Atlassian MCP server, Bitbucket/git JS tool config, the `reviewer` agent + `pr_review` webhook from the [Examples](#examples) above, and a `pr_review_flow` flow that checks out the pull request before reviewing it — copy it and adjust as needed.
 
 ## Security
 The AI tools out there are powerful but many of them are scary dangerous. With Beaver I took a different attempt restricting what an agent can do by default. 

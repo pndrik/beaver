@@ -17,6 +17,7 @@ pub enum Value {
     Bool(bool),
     Map(HashMap<String, Value>),
     List(Vec<Value>),
+    Null,
     Empty,
 }
 
@@ -27,6 +28,7 @@ impl Value {
             CallValue::Integer(i) => Value::Integer(*i),
             CallValue::Float(f) => Value::Float(*f),
             CallValue::Boolean(b) => Value::Bool(*b),
+            CallValue::Null => Value::Null,
             CallValue::Array(a) => {
                 let items = a.iter().map(|v| Value::new_from_call_value(v)).collect();
                 Value::List(items)
@@ -103,6 +105,7 @@ impl Value {
             Value::Integer(i) => Ok(JsValue::from(i)),
             Value::Float(f) => Ok(JsValue::from(f)),
             Value::Bool(b) => Ok(JsValue::from(b)),
+            Value::Null => Ok(JsValue::null()),
             Value::Empty => Ok(JsValue::undefined()),
 
             Value::List(items) => {
