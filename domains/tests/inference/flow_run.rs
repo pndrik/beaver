@@ -344,7 +344,7 @@ spec:
         .unwrap_err();
 
     assert_eq!(err.translation_key, "flow_invalid");
-    assert!(err.internal_message.contains("'coder' and 'reviewer'"));
+    assert!(err.internal_message.contains("context 'c'"));
     assert!(scripted.calls().is_empty());
     assert!(!global.path().join("work").exists());
 }

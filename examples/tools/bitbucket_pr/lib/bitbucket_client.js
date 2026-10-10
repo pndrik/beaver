@@ -32,7 +32,8 @@ class BitbucketClient {
   }
 
   async request(path, options = {}) {
-    const response = await fetch(`${this.baseUrl}${path}`, {
+    const url = path.startsWith(`${this.baseUrl}/`) ? path : `${this.baseUrl}${path}`;
+    const response = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -79,7 +80,33 @@ class BitbucketClient {
     return this.request(`/2.0/repositories/${this.workspace}/${repository}/pullrequests/${id}`);
   }
 
-  async createPullRequest(repository, { title, description = '', sourceBranch, destinationBranch }) {
+  async requestAllPages(path) {
+    const values = [];
+    let next = path;
+    while (next) {
+      const page = await this.request(next);
+      values.push(...(page.values || []));
+      next = page.next;
+    }
+    return values;
+  }
+
+  getCurrentUser() {
+    return this.request('/2.0/user');
+  }
+
+  async listEffectiveDefaultReviewers(repository) {
+    if (typeof repository !== 'string' || repository.length === 0) {
+      throw new Error('Repository is required');
+    }
+
+    const reviewers = await this.requestAllPages(
+      `/2.0/repositories/${this.workspace}/${repository}/effective-default-reviewers?pagelen=100`
+    );
+    return reviewers.map((reviewer) => reviewer.user).filter((user) => user && user.uuid);
+  }
+
+  async createPullRequest(repository, { title, description = '', sourceBranch, destinationBranch, reviewers = [] }) {
     if (typeof repository !== 'string' || repository.length === 0) {
       throw new Error('Repository is required');
     }
@@ -95,6 +122,9 @@ class BitbucketClient {
     if (!destinationBranch || typeof destinationBranch !== 'string') {
       throw new Error('Destination branch is required and must be a string');
     }
+    if (!Array.isArray(reviewers) || reviewers.some((uuid) => typeof uuid !== 'string')) {
+      throw new Error('Reviewers must be an array of user UUIDs');
+    }
 
     const res = await this.request(`/2.0/repositories/${this.workspace}/${repository}/pullrequests`, {
       method: 'POST',
@@ -103,6 +133,7 @@ class BitbucketClient {
         description,
         source: { branch: { name: sourceBranch } },
         destination: { branch: { name: destinationBranch } },
+        reviewers: reviewers.map((uuid) => ({ uuid })),
       }),
     });
 

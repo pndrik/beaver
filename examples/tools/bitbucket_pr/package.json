@@ -142,7 +142,7 @@
           "description": "Creates a pull request on a Bitbucket repository.",
           "scopes": {
             "fetch": {
-              "methods": ["POST"],
+              "methods": ["GET", "POST"],
               "urls": ["^https://api.bitbucket.org/.*$"]
             }
           },

@@ -11,6 +11,9 @@ use super::Repository;
 
 mod helpers;
 
+#[cfg(test)]
+mod tests;
+
 pub struct GitRepository {
     pub path: PathBuf,
     pub repository: Repository,
@@ -103,6 +106,15 @@ impl GitRepository {
             .ok()
             .and_then(|h| h.target())
             .and_then(|oid| repo.find_commit(oid).ok());
+
+        let parent_tree_id = parent_commit.as_ref().map(|commit| commit.tree_id());
+        let is_empty = match parent_tree_id {
+            Some(parent_tree_id) => parent_tree_id == tree_id,
+            None => tree.is_empty(),
+        };
+        if is_empty {
+            return Err(Error::from_str("Nothing to commit, working tree clean"));
+        }
 
         let parent = parent_commit
             .as_ref()
