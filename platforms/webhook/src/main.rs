@@ -9,7 +9,8 @@ use axum::{
     response::Response,
     routing::any,
 };
-use std::sync::Arc;
+use std::{io, sync::Arc, thread};
+use tokio::runtime::Builder;
 
 use app::App;
 use app_domains::core::models::{AppContext, AppError};
@@ -17,6 +18,14 @@ use app_domains::core::models::{AppContext, AppError};
 mod extensions;
 mod hooks;
 mod models;
+
+const MIN_WORKER_THREADS: usize = 6;
+fn determine_thread_count() -> (usize, Option<io::Error>) {
+    match thread::available_parallelism() {
+        Ok(threads) => (threads.get().max(MIN_WORKER_THREADS), None),
+        Err(e) => (MIN_WORKER_THREADS, Some(e)),
+    }
+}
 
 async fn get_bind_addr(ctx: &AppContext) -> Result<String, AppError> {
     let port = ctx.configuration.get_int(&ctx, "webhooks.port").await?;
@@ -44,8 +53,19 @@ async fn context_middleware(
     next.run(req).await
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let (worker_threads, parallelism_error) = determine_thread_count();
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .thread_name("beaver-worker")
+        .enable_all()
+        .build()
+        .expect("Failed to create Tokio runtime");
+
+    runtime.block_on(start(worker_threads, parallelism_error));
+}
+
+async fn start(worker_threads: usize, parallelism_error: Option<io::Error>) {
     let application = Arc::new(
         app::bootstrap()
             .await
@@ -56,6 +76,21 @@ async fn main() {
         .get_context("boot-webhook".to_string())
         .await
         .expect("Failed to get application context");
+
+    if let Some(e) = parallelism_error {
+        ctx.logger
+            .warn(
+                &ctx,
+                &format!("Failed to determine available parallelism: {}", e),
+            )
+            .await;
+    }
+    ctx.logger
+        .info(
+            &ctx,
+            &format!("Starting server with {} worker threads", worker_threads),
+        )
+        .await;
 
     let bind_addr = get_bind_addr(&ctx)
         .await
