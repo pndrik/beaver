@@ -73,7 +73,7 @@ impl Tool for Write {
             false,
             SchemaField::new(
                 SchemaFieldType::Integer,
-                "Optional, start writing from this line number (1-based).",
+                "Optional, start writing from this line number (1-based). Use the line after the last line to add content at the end of the file.",
                 None,
             ),
         );
@@ -83,7 +83,7 @@ impl Tool for Write {
             false,
             SchemaField::new(
                 SchemaFieldType::Integer,
-                "Optional, number of lines to replace starting from the start line number.",
+                "Optional, number of lines to replace starting from the start line number. Defaults to 0, which inserts the content before the start line without replacing anything.",
                 None,
             ),
         );
@@ -214,26 +214,8 @@ fn replace_lines_in_file(
             ctx.clone()
         )
     })?;
-    let original_lines: Vec<&str> = original.lines().collect();
-
-    let start = start as usize - 1;
-    let end = match length {
-        Some(len) => (start + len as usize).min(original_lines.len()) - 1,
-        None => original_lines.len(),
-    };
-
-    let before = &original_lines[..start];
-    let after = &original_lines[end + 1..];
-    let content_lines: Vec<&str> = content.lines().collect();
-
-    let new_lines: Vec<&str> = before
-        .iter()
-        .copied()
-        .chain(content_lines.iter().copied())
-        .chain(after.iter().copied())
-        .collect();
-
-    let new_content = new_lines.join("\n");
+    let new_content = replace_lines(&original, start, length, content)
+        .map_err(|message| app_error!(Validation, "skill_failed", &message, ctx.clone()))?;
 
     file.seek(SeekFrom::Start(0)).map_err(|e| {
         app_error!(
@@ -261,6 +243,57 @@ fn replace_lines_in_file(
     })?;
 
     Ok(())
+}
+
+fn replace_lines(
+    original: &str,
+    start: u64,
+    length: Option<u64>,
+    content: &str,
+) -> Result<String, String> {
+    let original_lines: Vec<&str> = original.lines().collect();
+    let line_count = original_lines.len();
+
+    if start == 0 {
+        return Err("Start line number must be greater than 0".to_string());
+    }
+    let start_index = (start - 1) as usize;
+    if start_index > line_count {
+        return Err(format!(
+            "Start line {} is beyond the end of the file ({} lines). Use a start line between 1 and {} or set append to true.",
+            start,
+            line_count,
+            line_count + 1
+        ));
+    }
+    let end_index = start_index
+        .saturating_add(length.unwrap_or(0) as usize)
+        .min(line_count);
+
+    let new_lines: Vec<&str> = original_lines[..start_index]
+        .iter()
+        .copied()
+        .chain(content.lines())
+        .chain(original_lines[end_index..].iter().copied())
+        .collect();
+
+    let line_ending = if original.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let trailing_newline = if original.is_empty() {
+        content.ends_with('\n')
+    } else {
+        original.ends_with('\n')
+    };
+
+    let mut new_content = new_lines.join(line_ending);
+    if trailing_newline && !new_lines.is_empty() {
+        new_content.push_str(line_ending);
+    }
+
+    Ok(new_content)
 }
 
 fn write_file(
@@ -316,4 +349,93 @@ fn write_file(
     })?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace_lines;
+
+    const FILE: &str = "one\ntwo\nthree\n";
+
+    #[test]
+    fn replaces_lines() {
+        assert_eq!(
+            replace_lines(FILE, 2, Some(1), "TWO").unwrap(),
+            "one\nTWO\nthree\n"
+        );
+    }
+
+    #[test]
+    fn replaces_multiple_lines_with_fewer_lines() {
+        assert_eq!(replace_lines(FILE, 1, Some(2), "X").unwrap(), "X\nthree\n");
+    }
+
+    #[test]
+    fn clamps_length_to_end_of_file() {
+        assert_eq!(replace_lines(FILE, 2, Some(100), "X").unwrap(), "one\nX\n");
+    }
+
+    #[test]
+    fn inserts_without_length() {
+        assert_eq!(
+            replace_lines(FILE, 2, None, "X").unwrap(),
+            "one\nX\ntwo\nthree\n"
+        );
+    }
+
+    #[test]
+    fn inserts_with_zero_length() {
+        assert_eq!(
+            replace_lines(FILE, 1, Some(0), "X").unwrap(),
+            "X\none\ntwo\nthree\n"
+        );
+    }
+
+    #[test]
+    fn appends_one_line_past_end() {
+        assert_eq!(
+            replace_lines(FILE, 4, None, "four").unwrap(),
+            "one\ntwo\nthree\nfour\n"
+        );
+    }
+
+    #[test]
+    fn rejects_start_beyond_end_of_file() {
+        let err = replace_lines(FILE, 96, Some(2), "X").unwrap_err();
+        assert!(err.contains("beyond the end of the file (3 lines)"));
+        assert!(err.contains("between 1 and 4"));
+    }
+
+    #[test]
+    fn rejects_start_zero() {
+        assert!(replace_lines(FILE, 0, None, "X").is_err());
+    }
+
+    #[test]
+    fn writes_into_empty_file() {
+        assert_eq!(replace_lines("", 1, None, "X\n").unwrap(), "X\n");
+        assert_eq!(replace_lines("", 1, Some(5), "X").unwrap(), "X");
+        assert!(replace_lines("", 2, None, "X").is_err());
+    }
+
+    #[test]
+    fn keeps_missing_trailing_newline() {
+        assert_eq!(
+            replace_lines("one\ntwo", 2, Some(1), "TWO").unwrap(),
+            "one\nTWO"
+        );
+    }
+
+    #[test]
+    fn keeps_crlf_line_endings() {
+        assert_eq!(
+            replace_lines("one\r\ntwo\r\n", 2, Some(1), "TWO").unwrap(),
+            "one\r\nTWO\r\n"
+        );
+    }
+
+    #[test]
+    fn deleting_all_lines_leaves_empty_file() {
+        assert_eq!(replace_lines(FILE, 1, Some(3), "").unwrap(), "");
+    }
 }
