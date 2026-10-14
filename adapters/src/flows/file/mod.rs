@@ -6,8 +6,10 @@ use async_trait::async_trait;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::{models::Flow, traits::FlowProvider},
+    flows::{models::Definition, traits::FlowProvider},
 };
+
+use super::token;
 
 mod file;
 mod parse;
@@ -59,7 +61,7 @@ impl File {
         ctx: &AppContext,
         flows_dir: &str,
         flow_name: &str,
-    ) -> Result<Flow, AppError> {
+    ) -> Result<Definition, AppError> {
         let config_content = file::read_file(ctx, &format!("{}/{}.yaml", flows_dir, flow_name))?;
         let flow = parse::parse_flow(ctx, &config_content)?;
 
@@ -87,7 +89,7 @@ impl FlowProvider for File {
         Ok(())
     }
 
-    async fn list(&self, ctx: &AppContext) -> Result<Vec<Flow>, AppError> {
+    async fn list(&self, ctx: &AppContext) -> Result<Vec<Definition>, AppError> {
         let Some(flows_dir) = self.get_flows_dir(ctx).await? else {
             return Ok(vec![]);
         };
@@ -98,7 +100,7 @@ impl FlowProvider for File {
             .collect()
     }
 
-    async fn get(&self, ctx: &AppContext, name: &str) -> Result<Flow, AppError> {
+    async fn get(&self, ctx: &AppContext, name: &str) -> Result<Definition, AppError> {
         let flows_dir = self.get_flows_dir(ctx).await?;
         let Some(flows_dir) =
             flows_dir.filter(|dir| file::file_exists(&format!("{}/{}.yaml", dir, name)))
@@ -114,7 +116,12 @@ impl FlowProvider for File {
         self.load_flow(ctx, &flows_dir, name)
     }
 
-    async fn get_by_webhook(&self, ctx: &AppContext, name: &str) -> Result<Option<Flow>, AppError> {
+    async fn get_by_webhook(
+        &self,
+        ctx: &AppContext,
+        name: &str,
+        token: &str,
+    ) -> Result<Option<Definition>, AppError> {
         let Some(flows_dir) = self.get_flows_dir(ctx).await? else {
             return Ok(None);
         };
@@ -133,14 +140,8 @@ impl FlowProvider for File {
                 }
             };
 
-            if flow
-                .spec
-                .triggers
-                .webhook
-                .as_ref()
-                .is_some_and(|webhook| webhook.name == name)
-            {
-                return Ok(Some(flow));
+            if token::has_webhook(&flow, name) {
+                return Ok(token::token_matches(&flow, token).then_some(flow));
             }
         }
 

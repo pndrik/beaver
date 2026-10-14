@@ -6,16 +6,18 @@ use async_trait::async_trait;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::{models::Flow, traits::FlowProvider},
+    flows::{models::Definition, traits::FlowProvider},
 };
+
+use super::token;
 
 /// Serves a fixed list of flows held in memory.
 pub struct Memory {
-    flows: Vec<Flow>,
+    flows: Vec<Definition>,
 }
 
 impl Memory {
-    pub fn new(flows: Vec<Flow>) -> Self {
+    pub fn new(flows: Vec<Definition>) -> Self {
         Self { flows }
     }
 }
@@ -26,11 +28,11 @@ impl FlowProvider for Memory {
         Ok(())
     }
 
-    async fn list(&self, _ctx: &AppContext) -> Result<Vec<Flow>, AppError> {
+    async fn list(&self, _ctx: &AppContext) -> Result<Vec<Definition>, AppError> {
         Ok(self.flows.clone())
     }
 
-    async fn get(&self, ctx: &AppContext, name: &str) -> Result<Flow, AppError> {
+    async fn get(&self, ctx: &AppContext, name: &str) -> Result<Definition, AppError> {
         self.flows
             .iter()
             .find(|flow| flow.metadata.name == name)
@@ -49,17 +51,13 @@ impl FlowProvider for Memory {
         &self,
         _ctx: &AppContext,
         name: &str,
-    ) -> Result<Option<Flow>, AppError> {
+        token: &str,
+    ) -> Result<Option<Definition>, AppError> {
         Ok(self
             .flows
             .iter()
-            .find(|flow| {
-                flow.spec
-                    .triggers
-                    .webhook
-                    .as_ref()
-                    .is_some_and(|webhook| webhook.name == name)
-            })
+            .find(|flow| token::has_webhook(flow, name))
+            .filter(|flow| token::token_matches(flow, token))
             .cloned())
     }
 }

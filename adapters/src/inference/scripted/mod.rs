@@ -46,7 +46,7 @@ impl Scripted {
 impl InferenceProvider for Scripted {
     async fn infer(
         &self,
-        ctx: &AppContext,
+        _ctx: &AppContext,
         _options: &Options,
         conversation: &mut Conversation,
     ) -> Result<Vec<Call>, AppError> {
@@ -66,7 +66,7 @@ impl InferenceProvider for Scripted {
         let agent = conversation.agent.metadata.name.clone();
         self.calls.lock().unwrap().push(ScriptedCall {
             agent: agent.clone(),
-            chroot: ctx.chroot.clone(),
+            chroot: conversation.chroot().to_string(),
             prompt: prompt.clone(),
             history,
         });

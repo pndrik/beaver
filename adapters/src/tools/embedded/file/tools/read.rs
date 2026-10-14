@@ -13,6 +13,7 @@ use super::super::permissions;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::{
         models::{Call, Schema, SchemaField, SchemaFieldType, ToolPermission},
         traits::Tool,
@@ -80,6 +81,7 @@ impl Tool for Read {
     async fn call(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {
@@ -92,7 +94,7 @@ impl Tool for Read {
             )
         })?;
 
-        let path = permissions::absolute_path(ctx, &permissions, &args.path)?;
+        let path = permissions::absolute_path(ctx, conversation, &permissions, &args.path)?;
 
         read_file(ctx, &path, args.start, args.end)
     }

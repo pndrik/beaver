@@ -1,9 +1,15 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use std::path::Path;
+
 use super::Message;
-use crate::inference::models::Agent;
-use crate::tools::models::Tool;
+use crate::{
+    app_error,
+    core::models::{AppContext, AppError},
+    inference::models::Agent,
+    tools::models::Tool,
+};
 
 type Callback = Box<dyn Fn(Message) + Send + Sync>;
 
@@ -13,16 +19,37 @@ pub struct Conversation {
     pub agent: Agent,
     pub tools: Vec<Tool>,
 
+    chroot: String,
     messages: Vec<Message>,
     subscribers: Vec<Callback>,
 }
 
 impl Conversation {
-    pub fn new(system_prompt: Message, agent: Agent, tools: Vec<Tool>) -> Self {
+    pub fn new(
+        ctx: &AppContext,
+        system_prompt: Message,
+        agent: Agent,
+        tools: Vec<Tool>,
+        chroot: &str,
+    ) -> Result<Self, AppError> {
+        let chroot = Path::new(chroot.trim_end_matches('/'))
+            .canonicalize()
+            .map_err(|e| {
+                app_error!(
+                    Validation,
+                    "access_violation",
+                    &format!("Invalid chroot '{}': {}", chroot, e),
+                    ctx.clone()
+                )
+            })?
+            .to_string_lossy()
+            .to_string();
+
         let mut conversation = Self {
             system_prompt,
             agent,
             tools: vec![],
+            chroot,
             messages: vec![],
             subscribers: vec![],
         };
@@ -31,7 +58,57 @@ impl Conversation {
             conversation.add_tool(tool);
         }
 
-        conversation
+        Ok(conversation)
+    }
+
+    pub fn chroot(&self) -> &str {
+        &self.chroot
+    }
+
+    /// Resolves `path` inside the chroot. Fails if it doesn't exist or escapes the chroot.
+    pub fn get_absolute_path(&self, ctx: &AppContext, path: &str) -> Result<String, AppError> {
+        let joined = format!(
+            "{}/{}",
+            self.chroot.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        );
+
+        let canonicalized = Path::new(&joined).canonicalize().map_err(|e| {
+            app_error!(
+                Validation,
+                "access_violation",
+                &format!("Invalid path '{}': {}", path, e),
+                ctx.clone()
+            )
+        })?;
+
+        let chroot_canonicalized = Path::new(&self.chroot).canonicalize().map_err(|e| {
+            app_error!(
+                Validation,
+                "access_violation",
+                &format!("Invalid chroot '{}': {}", self.chroot, e),
+                ctx.clone()
+            )
+        })?;
+        if !canonicalized.starts_with(&chroot_canonicalized) {
+            return Err(app_error!(
+                Validation,
+                "access_violation",
+                &format!("Path '{}' is outside of chroot", path),
+                ctx.clone()
+            ));
+        }
+
+        if !canonicalized.exists() {
+            return Err(app_error!(
+                Validation,
+                "access_violation",
+                &format!("Path '{}' does not exist", path),
+                ctx.clone()
+            ));
+        }
+
+        Ok(canonicalized.to_string_lossy().to_string())
     }
 
     pub fn prompt(&self) -> &Message {

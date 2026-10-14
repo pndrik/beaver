@@ -11,6 +11,7 @@ use super::super::permissions;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::{
         models::{Call, Schema, SchemaField, SchemaFieldType, ToolPermission},
         traits::Tool,
@@ -123,6 +124,7 @@ impl Tool for Search {
     async fn call(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {
@@ -144,7 +146,7 @@ impl Tool for Search {
             ));
         }
 
-        let path = permissions::absolute_path(ctx, &permissions, &args.path)?;
+        let path = permissions::absolute_path(ctx, conversation, &permissions, &args.path)?;
         let regex = Regex::new(&args.pattern).map_err(|e| {
             app_error!(
                 Validation,
@@ -174,7 +176,7 @@ impl Tool for Search {
             .map(|m| {
                 format!(
                     "{}:{} {}",
-                    m.path.strip_prefix(&ctx.chroot).unwrap_or("/"),
+                    m.path.strip_prefix(conversation.chroot()).unwrap_or("/"),
                     m.line_number,
                     m.line
                 )

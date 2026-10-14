@@ -14,11 +14,9 @@ use app_domains::{
 fn context() -> AppContext {
     AppContext::new(
         "test".to_string(),
-        std::env::temp_dir().to_string_lossy().to_string(),
         Arc::new(ConfigurationMap::default()),
         Arc::new(LoggerRecording::new()),
     )
-    .unwrap()
 }
 
 fn parse(schema: Value) -> Result<Schema, AppError> {

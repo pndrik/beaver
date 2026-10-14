@@ -8,13 +8,11 @@ use serde_json::{Map, Value, json};
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::{
-        Inference,
-        models::{
-            Conversation, Flow, FlowAction, FlowAgentArguments, FlowChroot, FlowStep,
-            FlowToolArguments,
-        },
+    flows::{
+        Flows,
+        models::{Action, AgentArguments, Chroot, Definition, Step, ToolArguments},
     },
+    inference::{Inference, models::Conversation},
     tools::{
         Tools,
         models::{Call, CallValue, ToolPermission},
@@ -26,10 +24,9 @@ mod values;
 
 /// State of a named context within one flow run.
 struct RunContext {
-    app_ctx: AppContext,
     chroot: PathBuf,
-    declared_chroot: Option<FlowChroot>,
-    conversation: Option<Conversation>,
+    declared_chroot: Option<Chroot>,
+    conversation: Conversation,
 }
 
 /// State of one flow run. Every trigger gets its own, nothing is shared.
@@ -40,13 +37,14 @@ struct FlowRun {
     delete_on_finish: Vec<PathBuf>,
 }
 
-impl Inference {
-    pub async fn flow_run(
+impl Flows {
+    pub async fn run(
         &self,
         ctx: &AppContext,
-        flow: &Flow,
+        flow: &Definition,
         body: &Value,
         query: &Value,
+        inference: &Inference,
         tools: &Tools,
     ) -> Result<(), AppError> {
         let flow_name = &flow.metadata.name;
@@ -68,7 +66,7 @@ impl Inference {
 
             let values = values::template_values(ctx, flow, body, query, &run.steps);
             if let Err(mut err) = self
-                .flow_step(ctx, flow, step, &values, tools, &mut run)
+                .step(ctx, flow, step, &values, inference, tools, &mut run)
                 .await
             {
                 err.internal_message = format!(
@@ -100,19 +98,29 @@ impl Inference {
         result
     }
 
-    async fn flow_step(
+    #[allow(clippy::too_many_arguments)]
+    async fn step(
         &self,
         ctx: &AppContext,
-        flow: &Flow,
-        step: &FlowStep,
+        flow: &Definition,
+        step: &Step,
         values: &Value,
+        inference: &Inference,
         tools: &Tools,
         run: &mut FlowRun,
     ) -> Result<(), AppError> {
         match run.contexts.get(&step.context.name) {
             None => {
                 let context = self
-                    .flow_context(ctx, step, values, &mut run.delete_on_finish)
+                    .context(
+                        ctx,
+                        flow,
+                        step,
+                        values,
+                        inference,
+                        tools,
+                        &mut run.delete_on_finish,
+                    )
                     .await?;
                 run.contexts.insert(step.context.name.clone(), context);
             }
@@ -137,19 +145,15 @@ impl Inference {
             .expect("context was just created");
 
         let output = match &step.action {
-            FlowAction::Agent(arguments) => {
-                self.flow_agent(context, arguments, values, tools).await?
+            Action::Agent(arguments) => {
+                self.agent(ctx, context, arguments, values, inference, tools)
+                    .await?
             }
-            FlowAction::Tool(arguments) => {
-                self.flow_tool(context, arguments, values, tools).await?
-            }
+            Action::Tool(arguments) => self.tool(ctx, context, arguments, values, tools).await?,
         };
 
-        let global = chroot::global_chroot(ctx)?;
-        let messages = context
-            .conversation
-            .as_ref()
-            .map_or(json!([]), |c| values::messages(c.messages()));
+        let global = chroot::global_chroot(ctx).await?;
+        let messages = values::messages(context.conversation.messages());
         run.steps.insert(
             step.name.clone(),
             json!({
@@ -163,11 +167,15 @@ impl Inference {
         Ok(())
     }
 
-    async fn flow_context(
+    #[allow(clippy::too_many_arguments)]
+    async fn context(
         &self,
         ctx: &AppContext,
-        step: &FlowStep,
+        flow: &Definition,
+        step: &Step,
         values: &Value,
+        inference: &Inference,
+        tools: &Tools,
         delete_on_finish: &mut Vec<PathBuf>,
     ) -> Result<RunContext, AppError> {
         let chroot = match &step.context.chroot {
@@ -177,41 +185,46 @@ impl Inference {
                     .render(ctx, &declared.path, values)
                     .await?;
                 let chroot =
-                    chroot::prepare(ctx, &path, declared.create_if_missing, declared.delete)?;
+                    chroot::prepare(ctx, &path, declared.create_if_missing, declared.delete)
+                        .await?;
                 if declared.delete && !delete_on_finish.contains(&chroot) {
                     delete_on_finish.push(chroot.clone());
                 }
                 chroot
             }
-            None => chroot::global_chroot(ctx)?,
+            None => chroot::global_chroot(ctx).await?,
         };
 
-        let app_ctx = AppContext::new(
-            ctx.trace_id.clone(),
-            chroot.to_string_lossy().to_string(),
-            ctx.configuration.clone(),
-            ctx.logger.clone(),
-        )?;
+        let agent = flow.context_agent(&step.context.name).ok_or_else(|| {
+            app_error!(
+                Validation,
+                "flow_invalid",
+                &format!("Context '{}' has no agent step", step.context.name),
+                ctx.clone()
+            )
+        })?;
+        let conversation = inference
+            .new_conversation(ctx, agent, tools, &chroot.to_string_lossy())
+            .await?;
 
         Ok(RunContext {
-            app_ctx,
             chroot,
             declared_chroot: step.context.chroot.clone(),
-            conversation: None,
+            conversation,
         })
     }
 
-    async fn flow_agent(
+    async fn agent(
         &self,
+        ctx: &AppContext,
         context: &mut RunContext,
-        arguments: &FlowAgentArguments,
+        arguments: &AgentArguments,
         values: &Value,
+        inference: &Inference,
         tools: &Tools,
     ) -> Result<String, AppError> {
-        let ctx = &context.app_ctx;
-        if let Some(conversation) = &context.conversation
-            && conversation.agent.metadata.name != arguments.agent
-        {
+        let conversation = &mut context.conversation;
+        if conversation.agent.metadata.name != arguments.agent {
             return Err(app_error!(
                 Validation,
                 "flow_invalid",
@@ -231,15 +244,8 @@ impl Inference {
             .trace(ctx, &format!("[prompt → {}]: {}", arguments.agent, prompt))
             .await;
 
-        let conversation = match &mut context.conversation {
-            Some(conversation) => conversation,
-            None => context
-                .conversation
-                .insert(self.new_conversation(ctx, &arguments.agent, tools).await?),
-        };
-
         conversation.add_user_message(prompt);
-        self.infer(ctx, conversation, tools).await?;
+        inference.infer(ctx, conversation, tools).await?;
 
         let output = conversation
             .messages()
@@ -255,14 +261,14 @@ impl Inference {
         Ok(output)
     }
 
-    async fn flow_tool(
+    async fn tool(
         &self,
+        ctx: &AppContext,
         context: &mut RunContext,
-        arguments: &FlowToolArguments,
+        arguments: &ToolArguments,
         values: &Value,
         tools: &Tools,
     ) -> Result<String, AppError> {
-        let ctx = &context.app_ctx;
         let rendered = values::render_arguments(
             self.template_engine.as_ref(),
             ctx,
@@ -287,16 +293,16 @@ impl Inference {
             name: arguments.tool.clone(),
             scopes: arguments.scopes.clone(),
         };
-        let output = tools.execute_direct(ctx, permissions, &call).await?;
+        let output = tools
+            .execute_direct(ctx, &mut context.conversation, permissions, &call)
+            .await?;
 
-        if let Some(conversation) = &mut context.conversation {
-            conversation.add_tool_message(format!(
-                "Name: {}\nArguments: {}\nResult: \n{}",
-                call.name,
-                call.arguments_as_json(),
-                output
-            ));
-        }
+        context.conversation.add_tool_message(format!(
+            "Name: {}\nArguments: {}\nResult: \n{}",
+            call.name,
+            call.arguments_as_json(),
+            output
+        ));
 
         Ok(output)
     }

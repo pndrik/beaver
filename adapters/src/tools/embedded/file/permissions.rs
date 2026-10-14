@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::models::ToolPermission,
 };
 
@@ -25,6 +26,7 @@ pub(super) fn check_scope(permissions: &ToolPermission, path: &str) -> bool {
 
 pub(super) fn absolute_path(
     ctx: &AppContext,
+    conversation: &Conversation,
     permissions: &ToolPermission,
     path: &str,
 ) -> Result<PathBuf, AppError> {
@@ -58,7 +60,7 @@ pub(super) fn absolute_path(
         ));
     }
 
-    let absolute_path = ctx.get_absolute_path(path)?;
+    let absolute_path = conversation.get_absolute_path(ctx, path)?;
     Path::new(&absolute_path).canonicalize().map_err(|e| {
         app_error!(
             Validation,

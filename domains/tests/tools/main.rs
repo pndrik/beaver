@@ -4,3 +4,4 @@
 //! Tests for the tools domain.
 
 mod schema;
+mod subagent;

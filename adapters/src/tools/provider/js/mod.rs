@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::{
         models::{Call, ToolPermission},
         traits::ToolsProvider,
@@ -109,6 +110,7 @@ impl ToolsProvider for JavascriptProvider {
     async fn execute(
         &self,
         ctx: &AppContext,
+        _conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {

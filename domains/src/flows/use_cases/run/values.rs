@@ -10,14 +10,15 @@ use crate::{
         models::{AppContext, AppError},
         traits::TemplateEngine,
     },
-    inference::models::{Flow, Message, MessageType},
+    flows::models::Definition,
+    inference::models::{Message, MessageType},
 };
 
 /// The values templates can read: `Body`, `Query`, `Ctx`, `Flow` and the
 /// results of the steps that already ran under `Steps.<step>`.
 pub(super) fn template_values(
     ctx: &AppContext,
-    flow: &Flow,
+    flow: &Definition,
     body: &Value,
     query: &Value,
     steps: &Map<String, Value>,

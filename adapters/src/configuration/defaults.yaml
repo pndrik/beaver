@@ -8,8 +8,6 @@ configuration:
 webhooks:
   port: 8080
   bind: "0.0.0.0"
-  provider: "file"
-  path: ""
 flows:
   provider: "file"
   path: ""

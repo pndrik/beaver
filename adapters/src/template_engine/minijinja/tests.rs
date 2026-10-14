@@ -18,13 +18,7 @@ use crate::{
 fn context(configuration: &[(&str, &str)]) -> (AppContext, Arc<LoggerRecording>) {
     let logger = Arc::new(LoggerRecording::new());
     let configuration: ConfigurationMap = configuration.iter().copied().collect();
-    let ctx = AppContext::new(
-        "test".to_string(),
-        std::env::temp_dir().to_string_lossy().to_string(),
-        Arc::new(configuration),
-        logger.clone(),
-    )
-    .unwrap();
+    let ctx = AppContext::new("test".to_string(), Arc::new(configuration), logger.clone());
     (ctx, logger)
 }
 

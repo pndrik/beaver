@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::models::ToolPermission,
 };
 
@@ -37,12 +38,13 @@ fn validate_path(
 
 pub(super) fn existing_repo_path(
     ctx: &AppContext,
+    conversation: &Conversation,
     permissions: &ToolPermission,
     path: &str,
 ) -> Result<PathBuf, AppError> {
     validate_path(ctx, permissions, path)?;
 
-    let absolute_path = ctx.get_absolute_path(path)?;
+    let absolute_path = conversation.get_absolute_path(ctx, path)?;
     Path::new(&absolute_path).canonicalize().map_err(|e| {
         app_error!(
             Validation,
@@ -55,12 +57,13 @@ pub(super) fn existing_repo_path(
 
 pub(super) fn clone_target_path(
     ctx: &AppContext,
+    conversation: &Conversation,
     permissions: &ToolPermission,
     path: &str,
 ) -> Result<PathBuf, AppError> {
     validate_path(ctx, permissions, path)?;
 
-    let chroot_root = Path::new(&ctx.chroot);
+    let chroot_root = Path::new(conversation.chroot());
     let sub_path_sanitized = path.trim_start_matches('/');
     let full_path = chroot_root.join(sub_path_sanitized);
 

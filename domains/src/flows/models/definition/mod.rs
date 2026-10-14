@@ -1,6 +1,36 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+mod action;
+pub use action::*;
+
+mod agent_arguments;
+pub use agent_arguments::*;
+
+mod chroot;
+pub use chroot::*;
+
+mod context;
+pub use context::*;
+
+mod metadata;
+pub use metadata::*;
+
+mod spec;
+pub use spec::*;
+
+mod step;
+pub use step::*;
+
+mod tool_arguments;
+pub use tool_arguments::*;
+
+mod trigger_webhook;
+pub use trigger_webhook::*;
+
+mod triggers;
+pub use triggers::*;
+
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -13,82 +43,9 @@ use crate::{
 const STEP_NAME_PATTERN: &str = r"^[A-Za-z_][A-Za-z0-9_]*$";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Flow {
-    pub metadata: FlowMetadata,
-    pub spec: FlowSpec,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FlowMetadata {
-    pub name: String,
-    #[serde(default)]
-    pub display_name: Option<String>,
-    #[serde(default)]
-    pub description: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FlowSpec {
-    #[serde(default)]
-    pub triggers: FlowTriggers,
-    pub steps: Vec<FlowStep>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct FlowTriggers {
-    #[serde(default)]
-    pub webhook: Option<FlowTriggerWebhook>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FlowTriggerWebhook {
-    pub name: String,
-    pub token: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FlowStep {
-    pub name: String,
-    pub context: FlowContext,
-    pub action: FlowAction,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FlowContext {
-    pub name: String,
-    #[serde(default)]
-    pub chroot: Option<FlowChroot>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct FlowChroot {
-    pub path: String,
-    #[serde(default)]
-    pub create_if_missing: bool,
-    #[serde(default)]
-    pub delete: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(tag = "type", content = "arguments", rename_all = "snake_case")]
-pub enum FlowAction {
-    Agent(FlowAgentArguments),
-    Tool(FlowToolArguments),
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FlowAgentArguments {
-    pub agent: String,
-    pub prompt: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FlowToolArguments {
-    pub tool: String,
-    #[serde(default)]
-    pub arguments: serde_json::Value,
-    #[serde(default)]
-    pub scopes: Vec<String>,
+pub struct Definition {
+    pub metadata: Metadata,
+    pub spec: Spec,
 }
 
 fn invalid(ctx: &AppContext, flow_name: &str, message: &str) -> AppError {
@@ -100,7 +57,7 @@ fn invalid(ctx: &AppContext, flow_name: &str, message: &str) -> AppError {
     )
 }
 
-impl Flow {
+impl Definition {
     pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
         let name = &self.metadata.name;
         if name.is_empty() {
@@ -140,7 +97,7 @@ impl Flow {
                 ));
             }
 
-            if let FlowAction::Agent(arguments) = &step.action {
+            if let Action::Agent(arguments) = &step.action {
                 match context_agents.get(step.context.name.as_str()) {
                     Some(agent) if *agent != arguments.agent => {
                         return Err(invalid(
@@ -160,6 +117,26 @@ impl Flow {
             }
         }
 
+        for step in &self.spec.steps {
+            if !context_agents.contains_key(step.context.name.as_str()) {
+                return Err(invalid(
+                    ctx,
+                    name,
+                    &format!("context '{}' has no agent step", step.context.name),
+                ));
+            }
+        }
+
         Ok(())
+    }
+
+    /// The agent of the first agent step on `context`.
+    pub fn context_agent(&self, context: &str) -> Option<&str> {
+        self.spec.steps.iter().find_map(|step| match &step.action {
+            Action::Agent(arguments) if step.context.name == context => {
+                Some(arguments.agent.as_str())
+            }
+            _ => None,
+        })
     }
 }

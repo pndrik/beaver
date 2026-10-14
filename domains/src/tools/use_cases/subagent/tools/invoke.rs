@@ -115,8 +115,9 @@ impl SubagentTool for Invoke {
         conversation.remove_tool(subagent::INVOKE);
         conversation.add_tool(leave::tool());
 
+        let chroot = conversation.chroot().to_string();
         let mut subagent_conversation = inference
-            .new_conversation(ctx, &arguments.name, tools)
+            .new_conversation(ctx, &arguments.name, tools, &chroot)
             .await?;
         subagent_conversation.add_user_message(arguments.prompt);
         conversation.add_tool_message(format!(

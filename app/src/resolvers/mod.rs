@@ -15,6 +15,3 @@ pub(crate) use tools_provider::*;
 
 mod template_engine;
 pub(crate) use template_engine::*;
-
-mod webhook_provider;
-pub(crate) use webhook_provider::*;

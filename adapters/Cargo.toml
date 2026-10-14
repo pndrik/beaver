@@ -15,6 +15,7 @@ regex.workspace = true
 http.workspace = true
 base64.workspace = true
 chrono.workspace = true
+subtle.workspace = true
 
 genai = "0.7.0-rc.4"
 config = "0.15.27"

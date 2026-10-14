@@ -3,13 +3,13 @@
 
 use serde_json::json;
 
-use app_domains::inference::models::{Flow, FlowAction, FlowChroot};
+use app_domains::flows::models::{Action, Chroot, Definition};
 
 use crate::support;
 
 const EXAMPLE: &str = include_str!("../../../examples/flows/pr_review_flow.yaml");
 
-fn parse(yaml: &str) -> Flow {
+fn parse(yaml: &str) -> Definition {
     yaml_serde::from_str(yaml).unwrap()
 }
 
@@ -33,13 +33,13 @@ fn parses_example() {
     let clone = &flow.spec.steps[0];
     assert_eq!(
         clone.context.chroot,
-        Some(FlowChroot {
+        Some(Chroot {
             path: "runs/{{ Ctx.trace_id }}".to_string(),
             create_if_missing: true,
             delete: true,
         })
     );
-    let FlowAction::Tool(tool) = &clone.action else {
+    let Action::Tool(tool) = &clone.action else {
         panic!("expected tool action");
     };
     assert_eq!(tool.tool, "git_clone");
@@ -48,7 +48,7 @@ fn parses_example() {
 
     let review = &flow.spec.steps[1];
     assert!(review.context.chroot.is_none());
-    let FlowAction::Agent(agent) = &review.action else {
+    let Action::Agent(agent) = &review.action else {
         panic!("expected agent action");
     };
     assert_eq!(agent.agent, "coder");

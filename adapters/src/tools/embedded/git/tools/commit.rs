@@ -8,6 +8,7 @@ use super::super::{configuration, git_repository::GitRepository, permissions};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::{
         models::{Call, Schema, SchemaField, SchemaFieldType, ToolPermission},
         traits::Tool,
@@ -76,6 +77,7 @@ impl Tool for Commit {
     async fn call(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {
@@ -88,7 +90,7 @@ impl Tool for Commit {
             )
         })?;
 
-        let path = permissions::existing_repo_path(ctx, &permissions, &args.path)?;
+        let path = permissions::existing_repo_path(ctx, conversation, &permissions, &args.path)?;
         let path_str = path.to_str().ok_or_else(|| {
             app_error!(
                 Validation,

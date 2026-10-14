@@ -11,6 +11,7 @@ use crate::tools::embedded::{File, Git};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::{
         models::{Call, Tool, ToolPermission},
         traits::{ToolSet, ToolsProvider},
@@ -65,6 +66,7 @@ impl ToolsProvider for EmbeddedProvider {
     async fn execute(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {
@@ -72,7 +74,7 @@ impl ToolsProvider for EmbeddedProvider {
             match tool_set.get(ctx, &input.name).await {
                 Err(_) => continue,
                 Ok(_) => {
-                    return tool_set.call(ctx, permissions, input).await;
+                    return tool_set.call(ctx, conversation, permissions, input).await;
                 }
             }
         }

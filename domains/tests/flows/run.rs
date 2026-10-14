@@ -8,10 +8,7 @@ use app_adapters::{
     inference::ScriptedCall,
     logger::{LoggerRecording, RecordedLevel},
 };
-use app_domains::{
-    core::models::{AppContext, AppError},
-    inference::models::Flow,
-};
+use app_domains::{core::models::AppError, flows::models::Definition};
 
 use crate::support::{self, Fixture};
 
@@ -19,17 +16,18 @@ struct Run {
     result: Result<(), AppError>,
     calls: Vec<ScriptedCall>,
     logger: std::sync::Arc<LoggerRecording>,
-    ctx: AppContext,
+    /// The canonical global chroot.
+    chroot: String,
     // Keeps the global chroot alive until the assertions ran.
     _global: TempDir,
 }
 
-fn flow(steps: &str) -> Flow {
+fn flow(steps: &str) -> Definition {
     let yaml = format!(
         "metadata: {{ name: test_flow }}\nspec:\n  steps:\n{}",
         steps
     );
-    let flow: Flow = yaml_serde::from_str(&yaml).unwrap();
+    let flow: Definition = yaml_serde::from_str(&yaml).unwrap();
     let (ctx, _) = support::temp_context();
     flow.validate(&ctx).unwrap();
     flow
@@ -44,27 +42,35 @@ async fn run_with(steps: &str, setup: impl FnOnce(&TempDir)) -> Run {
     setup(&global);
     let (ctx, logger) = support::context(&global.path().to_string_lossy());
     let Fixture {
+        flows,
         inference,
         tools,
         scripted,
-    } = support::fixture(&ctx, vec![], vec![]);
+    } = support::fixture(&ctx, vec![]);
 
-    let result = inference
-        .flow_run(
+    let result = flows
+        .run(
             &ctx,
             &flow(steps),
             &json!({"pr": {"title": "Fix bug"}}),
             &json!({"mode": "fast"}),
+            &inference,
             &tools,
         )
         .await;
     let calls = scripted.calls();
+    let chroot = global
+        .path()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
 
     Run {
         result,
         calls,
         logger,
-        ctx,
+        chroot,
         _global: global,
     }
 }
@@ -103,11 +109,14 @@ async fn step_outputs_reach_later_prompts() {
     - name: last
       context: { name: c }
       action: { type: agent, arguments: { agent: coder, prompt: "{{ Steps.agent_step.output }}|{{ Steps.agent_step.context }}|{{ Steps.agent_step.chroot }}" } }
+    - name: tool_agent
+      context: { name: t }
+      action: { type: agent, arguments: { agent: coder, prompt: "x" } }
 "#)
     .await;
 
     run.result.unwrap();
-    let chroot = &run.ctx.chroot;
+    let chroot = &run.chroot;
     assert_eq!(
         run.calls[0].prompt,
         format!("echo Fix bug @ {}|fast|test_flow", chroot)
@@ -157,6 +166,51 @@ async fn tool_result_is_added_to_an_existing_conversation() {
 }
 
 #[tokio::test]
+async fn tool_step_output_reaches_the_conversation_of_the_context() {
+    let run = run(r#"
+    - name: tool_step
+      context: { name: c, chroot: { path: "work", create_if_missing: true } }
+      action: { type: tool, arguments: { tool: echo, arguments: { text: "hi" } } }
+    - name: agent_step
+      context: { name: c }
+      action: { type: agent, arguments: { agent: coder, prompt: "{{ Steps.tool_step.output }}" } }
+"#)
+    .await;
+
+    run.result.unwrap();
+    let chroot = format!("{}/work", run.chroot);
+    assert_eq!(run.calls[0].history, ["tool", "user"]);
+    assert_eq!(run.calls[0].chroot, chroot);
+    assert_eq!(run.calls[0].prompt, format!("echo hi @ {}", chroot));
+}
+
+#[test]
+fn context_without_an_agent_step_is_rejected() {
+    let flow: Definition = yaml_serde::from_str(
+        r#"
+metadata: { name: test_flow }
+spec:
+  steps:
+    - name: a
+      context: { name: c }
+      action: { type: agent, arguments: { agent: coder, prompt: "x" } }
+    - name: b
+      context: { name: t }
+      action: { type: tool, arguments: { tool: echo, arguments: { text: "hi" } } }
+"#,
+    )
+    .unwrap();
+    let (ctx, _) = support::temp_context();
+
+    let err = flow.validate(&ctx).unwrap_err();
+    assert_eq!(err.translation_key, "flow_invalid");
+    assert!(
+        err.internal_message
+            .contains("context 't' has no agent step")
+    );
+}
+
+#[tokio::test]
 async fn steps_run_in_their_context_chroot() {
     let run = run(r#"
     - name: work
@@ -169,7 +223,7 @@ async fn steps_run_in_their_context_chroot() {
     .await;
 
     run.result.unwrap();
-    let expected = format!("{}/runs/test-trace", run.ctx.chroot);
+    let expected = format!("{}/runs/test-trace", run.chroot);
     assert_eq!(run.calls[0].chroot, expected);
     assert_eq!(run.calls[1].chroot, expected);
     assert_eq!(run.calls[1].prompt, "runs/test-trace");
@@ -195,8 +249,8 @@ async fn failing_step_stops_the_flow_and_cleans_up() {
     assert!(err.internal_message.contains("'test_flow'"));
     assert!(err.internal_message.contains("'broken'"));
     assert!(run.calls.is_empty());
-    assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.ctx.chroot)).exists());
-    assert!(std::path::Path::new(&run.ctx.chroot).is_dir());
+    assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
+    assert!(std::path::Path::new(&run.chroot).is_dir());
 }
 
 #[tokio::test]
@@ -213,6 +267,9 @@ async fn unknown_agent_and_tool_fail_the_step() {
     - name: a
       context: { name: c }
       action: { type: tool, arguments: { tool: nope } }
+    - name: b
+      context: { name: c }
+      action: { type: agent, arguments: { agent: coder, prompt: "x" } }
 "#)
     .await;
     assert_eq!(
@@ -236,7 +293,7 @@ async fn chroot_outside_the_global_chroot_is_rejected() {
 
     assert_eq!(run.result.unwrap_err().translation_key, "access_violation");
     assert!(run.calls.is_empty());
-    let parent = std::path::Path::new(&run.ctx.chroot).parent().unwrap();
+    let parent = std::path::Path::new(&run.chroot).parent().unwrap();
     assert!(!parent.join(&outside).exists());
 
     let run = run_absolute("/").await;
@@ -265,7 +322,7 @@ async fn deleting_the_global_chroot_is_rejected() {
     .await;
 
     assert_eq!(run.result.unwrap_err().translation_key, "access_violation");
-    assert!(std::path::Path::new(&run.ctx.chroot).is_dir());
+    assert!(std::path::Path::new(&run.chroot).is_dir());
 }
 
 #[tokio::test]
@@ -318,12 +375,13 @@ async fn different_agent_on_a_reused_context_fails_before_any_step_runs() {
     let global = tempfile::tempdir().unwrap();
     let (ctx, _) = support::context(&global.path().to_string_lossy());
     let Fixture {
+        flows,
         inference,
         tools,
         scripted,
-    } = support::fixture(&ctx, vec![], vec![]);
+    } = support::fixture(&ctx, vec![]);
     // Built directly, without the provider's validation.
-    let flow: Flow = yaml_serde::from_str(
+    let flow: Definition = yaml_serde::from_str(
         r#"
 metadata: { name: test_flow }
 spec:
@@ -338,8 +396,8 @@ spec:
     )
     .unwrap();
 
-    let err = inference
-        .flow_run(&ctx, &flow, &json!({}), &json!({}), &tools)
+    let err = flows
+        .run(&ctx, &flow, &json!({}), &json!({}), &inference, &tools)
         .await
         .unwrap_err();
 

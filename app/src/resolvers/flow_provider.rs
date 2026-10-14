@@ -7,7 +7,7 @@ use app_adapters::flows::File;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::traits::FlowProvider,
+    flows::traits::FlowProvider,
 };
 
 const CONFIGURATION_FLOWS_PROVIDER: &str = "flows.provider";

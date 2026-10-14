@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::models,
     tools::models::Call,
     tools::models::ToolPermission,
@@ -158,6 +159,7 @@ impl ToolsProvider for McpProvider {
     async fn execute(
         &self,
         ctx: &AppContext,
+        _conversation: &mut Conversation,
         _permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {

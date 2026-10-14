@@ -13,9 +13,6 @@ configuration:
   agents:
     provider: "file"
     path: "/agents"
-  webhooks:
-    provider: "file"
-    path: "/webhooks"
   flows:
     provider: "file"
     path: "/flows"
@@ -26,7 +23,6 @@ configuration:
       javascript:
         enabled: true
         path: "/tools"
-webhooks: {}
 agents: {}
 flows: {}
 

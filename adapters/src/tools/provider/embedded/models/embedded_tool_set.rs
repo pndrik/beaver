@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::{
         models::{Call, Tool, ToolPermission},
         traits::{Tool as ToolTrait, ToolSet},
@@ -68,12 +69,13 @@ impl ToolSet for EmbeddedToolSet {
     async fn call(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {
         for tool in &self.tools {
             if tool.name(ctx).await? == input.name {
-                return tool.call(ctx, permissions, input).await;
+                return tool.call(ctx, conversation, permissions, input).await;
             }
         }
 

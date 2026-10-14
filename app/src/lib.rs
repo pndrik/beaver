@@ -19,10 +19,9 @@ pub async fn bootstrap() -> Result<App, AppError> {
 
     let mut ctx = AppContext::new(
         "boot".to_string(),
-        "/tmp".to_string(),
         configuration.clone(),
         Arc::new(logger.clone()),
-    )?;
+    );
 
     logger.refresh_level(&ctx).await?;
     ctx.logger = Arc::new(logger);

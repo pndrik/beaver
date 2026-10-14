@@ -13,6 +13,7 @@ use super::super::permissions;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::{
         models::{Call, Schema, SchemaField, SchemaFieldType, ToolPermission},
         traits::Tool,
@@ -114,6 +115,7 @@ impl Tool for Write {
     async fn call(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {
@@ -144,7 +146,8 @@ impl Tool for Write {
             )
         })?;
         let path_absolute =
-            permissions::absolute_path(ctx, &permissions, &parent.to_string_lossy())?.join(child);
+            permissions::absolute_path(ctx, conversation, &permissions, &parent.to_string_lossy())?
+                .join(child);
 
         write_file(
             ctx,

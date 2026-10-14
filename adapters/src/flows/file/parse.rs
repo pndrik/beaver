@@ -6,10 +6,10 @@ use yaml_serde;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::models::Flow,
+    flows::models::Definition,
 };
 
-pub(super) fn parse_flow(ctx: &AppContext, file_content: &str) -> Result<Flow, AppError> {
+pub(super) fn parse_flow(ctx: &AppContext, file_content: &str) -> Result<Definition, AppError> {
     yaml_serde::from_str(file_content).map_err(|e| {
         app_error!(
             Validation,

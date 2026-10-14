@@ -13,7 +13,6 @@ spec:
       labels: {{ include "chart.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: webhook
       annotations:
-        checksum/webhooks: {{ include (print $.Template.BasePath "/webhook/secret.yaml") . | sha256sum }}
         checksum/agents: {{ include (print $.Template.BasePath "/secret_agents.yaml") . | sha256sum }}
         checksum/flows: {{ include (print $.Template.BasePath "/secret_flows.yaml") . | sha256sum }}
         checksum/configuration: {{ include (print $.Template.BasePath "/secret_configuration.yaml") . | sha256sum }}
@@ -34,8 +33,6 @@ spec:
               subPath: configuration.yaml
             - name: sandbox
               mountPath: /sandbox
-            - name: webhooks
-              mountPath: /webhooks
             - name: agents
               mountPath: /agents
             - name: flows
@@ -60,9 +57,6 @@ spec:
                 path: configuration.yaml
         - name: sandbox
           emptyDir: {}
-        - name: webhooks
-          secret:
-            secretName: {{ include "chart.fullname" . }}-webhooks
         - name: agents
           secret:
             secretName: {{ include "chart.fullname" . }}-agents

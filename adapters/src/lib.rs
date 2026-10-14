@@ -8,4 +8,3 @@ pub mod inference;
 pub mod logger;
 pub mod template_engine;
 pub mod tools;
-pub mod webhooks;

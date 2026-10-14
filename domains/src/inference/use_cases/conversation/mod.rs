@@ -18,6 +18,7 @@ impl Inference {
         ctx: &AppContext,
         agent_name: &str,
         tools: &Tools,
+        chroot: &str,
     ) -> Result<Conversation, AppError> {
         let agent = self.agent_provider.get(ctx, agent_name).await?;
 
@@ -37,8 +38,6 @@ impl Inference {
             PROMPT.to_string() + "\n\n---\n# Prompt\n" + &agent.prompt,
             &system_caching,
         );
-        let conversation = Conversation::new(system_prompt, agent, tools_filtered);
-
-        Ok(conversation)
+        Conversation::new(ctx, system_prompt, agent, tools_filtered, chroot)
     }
 }

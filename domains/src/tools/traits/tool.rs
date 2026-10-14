@@ -5,6 +5,7 @@ use async_trait::async_trait;
 
 use crate::{
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::models::{self, Call, Schema, ToolPermission},
 };
 
@@ -16,6 +17,7 @@ pub trait Tool {
     async fn call(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError>;

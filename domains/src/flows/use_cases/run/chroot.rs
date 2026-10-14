@@ -52,22 +52,20 @@ fn resolve_existing_prefix(path: &Path) -> std::io::Result<PathBuf> {
     Ok(resolved)
 }
 
-pub(super) fn global_chroot(ctx: &AppContext) -> Result<PathBuf, AppError> {
-    Path::new(&ctx.chroot).canonicalize().map_err(|e| {
-        invalid(
-            ctx,
-            format!("Invalid global chroot '{}': {}", ctx.chroot, e),
-        )
-    })
+pub(super) async fn global_chroot(ctx: &AppContext) -> Result<PathBuf, AppError> {
+    let chroot = ctx.configuration.get_string(ctx, "context.chroot").await?;
+    Path::new(&chroot)
+        .canonicalize()
+        .map_err(|e| invalid(ctx, format!("Invalid global chroot '{}': {}", chroot, e)))
 }
 
-pub(super) fn prepare(
+pub(super) async fn prepare(
     ctx: &AppContext,
     path: &str,
     create_if_missing: bool,
     delete: bool,
 ) -> Result<PathBuf, AppError> {
-    let global = global_chroot(ctx)?;
+    let global = global_chroot(ctx).await?;
     let requested = Path::new(path);
     let joined = if requested.is_absolute() {
         requested.to_path_buf()
@@ -130,7 +128,9 @@ pub(super) fn relative(global: &Path, chroot: &Path) -> String {
 }
 
 pub(super) async fn cleanup(ctx: &AppContext, chroot: &Path) {
-    let is_global = global_chroot(ctx).map_or(true, |global| global == chroot);
+    let is_global = global_chroot(ctx)
+        .await
+        .map_or(true, |global| global == chroot);
     if is_global || !chroot.exists() {
         return;
     }

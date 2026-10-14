@@ -65,10 +65,12 @@ impl Tools {
         None
     }
 
-    /// Runs a provider tool without an agent or conversation, e.g. for flow steps.
+    /// Runs a provider tool outside of inference, e.g. for flow steps. The caller
+    /// grants the permissions and records the result in the conversation.
     pub async fn execute_direct(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         call: &Call,
     ) -> Result<String, AppError> {
@@ -93,7 +95,7 @@ impl Tools {
             ));
         }
 
-        provider.execute(ctx, permissions, call).await
+        provider.execute(ctx, conversation, permissions, call).await
     }
 
     pub async fn call(
@@ -151,7 +153,7 @@ impl Tools {
                 return Ok(());
             }
 
-            match provider.execute(ctx, permissions, call).await {
+            match provider.execute(ctx, conversation, permissions, call).await {
                 Ok(res) => {
                     add_tool_message_to_conversation(ctx, conversation, call, "Result", &res)
                         .await?

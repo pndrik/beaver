@@ -5,13 +5,14 @@ use std::sync::Arc;
 
 use app_adapters::{
     agent, configuration::ConfigurationMap, flows, inference::Scripted, logger::LoggerRecording,
-    template_engine::MiniJinjaTemplateEngine, tools::provider::EchoProvider, webhooks,
+    template_engine::MiniJinjaTemplateEngine, tools::provider::EchoProvider,
 };
 use app_domains::{
     core::models::AppContext,
+    flows::{Flows, models::Definition},
     inference::{
         Inference,
-        models::{Agent, AgentCacheLevel, AgentInference, Flow, Model, Options, Webhook},
+        models::{Agent, AgentCacheLevel, AgentInference, Model, Options},
     },
     tools::Tools,
 };
@@ -20,13 +21,12 @@ pub const TRACE_ID: &str = "test-trace";
 
 pub fn context(chroot: &str) -> (AppContext, Arc<LoggerRecording>) {
     let logger = Arc::new(LoggerRecording::new());
+    let configuration: ConfigurationMap = [("context.chroot", chroot)].into_iter().collect();
     let ctx = AppContext::new(
         TRACE_ID.to_string(),
-        chroot.to_string(),
-        Arc::new(ConfigurationMap::default()),
+        Arc::new(configuration),
         logger.clone(),
-    )
-    .unwrap();
+    );
     (ctx, logger)
 }
 
@@ -49,6 +49,7 @@ fn agent(name: &str) -> Agent {
 }
 
 pub struct Fixture {
+    pub flows: Flows,
     pub inference: Inference,
     pub tools: Tools,
     pub scripted: Arc<Scripted>,
@@ -56,12 +57,14 @@ pub struct Fixture {
 
 /// Knows the agent `coder`, answers with the scripted provider and offers the
 /// `echo` and `fail` tools.
-pub fn fixture(ctx: &AppContext, webhooks: Vec<Webhook>, flows: Vec<Flow>) -> Fixture {
+pub fn fixture(ctx: &AppContext, flows: Vec<Definition>) -> Fixture {
     let scripted = Arc::new(Scripted::new());
     let inference = Inference::new(
         Arc::new(agent::Memory::new(vec![agent("coder")])),
         vec![scripted.clone()],
-        Arc::new(webhooks::Memory::new(webhooks)),
+    )
+    .unwrap();
+    let flows = Flows::new(
         Arc::new(flows::Memory::new(flows)),
         Arc::new(MiniJinjaTemplateEngine::new(ctx)),
     )
@@ -69,6 +72,7 @@ pub fn fixture(ctx: &AppContext, webhooks: Vec<Webhook>, flows: Vec<Flow>) -> Fi
     let tools = Tools::new(vec![Arc::new(EchoProvider::new(ctx))]).unwrap();
 
     Fixture {
+        flows,
         inference,
         tools,
         scripted,

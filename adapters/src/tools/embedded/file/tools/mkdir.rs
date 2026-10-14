@@ -9,6 +9,7 @@ use super::super::permissions;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::{
         models::{Call, Schema, SchemaField, SchemaFieldType, ToolPermission},
         traits::Tool,
@@ -54,6 +55,7 @@ impl Tool for Mkdir {
     async fn call(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {
@@ -66,7 +68,7 @@ impl Tool for Mkdir {
             )
         })?;
 
-        let path = permissions::absolute_path(ctx, &permissions, "/")?;
+        let path = permissions::absolute_path(ctx, conversation, &permissions, "/")?;
         let sub_path_sanitized = args.path.trim_start_matches('/');
         let full_path = path.join(sub_path_sanitized);
 
@@ -89,7 +91,7 @@ impl Tool for Mkdir {
             "Created directory '{}'",
             path.display()
                 .to_string()
-                .strip_prefix(&ctx.chroot)
+                .strip_prefix(conversation.chroot())
                 .unwrap_or("/")
         ))
     }

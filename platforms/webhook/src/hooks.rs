@@ -34,13 +34,13 @@ pub(crate) async fn handler(
         return unauthorized("Missing token");
     }
 
-    let target = match application
+    let flow = match application
         .domains
-        .inference
+        .flows
         .resolve_hook(&ctx, &name, token)
         .await
     {
-        Ok(target) => target,
+        Ok(flow) => flow,
         Err(_) => return unauthorized("Invalid token"),
     };
 
@@ -55,8 +55,15 @@ pub(crate) async fn handler(
     tokio::spawn(async move {
         if let Err(err) = app
             .domains
-            .inference
-            .run_hook(&ctx, &target, &body, &query, &app.domains.tools)
+            .flows
+            .run(
+                &ctx,
+                &flow,
+                &body,
+                &query,
+                &app.domains.inference,
+                &app.domains.tools,
+            )
             .await
         {
             ctx.logger

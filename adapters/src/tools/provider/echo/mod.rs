@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
+    inference::models::Conversation,
     tools::{
         models::{Call, Schema, SchemaField, SchemaFieldType, Tool, ToolPermission},
         traits::ToolsProvider,
@@ -59,6 +60,7 @@ impl ToolsProvider for EchoProvider {
     async fn execute(
         &self,
         ctx: &AppContext,
+        conversation: &mut Conversation,
         _permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {
@@ -75,6 +77,6 @@ impl ToolsProvider for EchoProvider {
             .get_argument("text")
             .and_then(|value| value.as_string())
             .unwrap_or_default();
-        Ok(format!("echo {} @ {}", text, ctx.chroot))
+        Ok(format!("echo {} @ {}", text, conversation.chroot()))
     }
 }

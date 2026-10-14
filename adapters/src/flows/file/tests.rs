@@ -3,7 +3,7 @@
 
 use std::{fs, sync::Arc};
 
-use app_domains::{core::models::AppContext, inference::traits::FlowProvider};
+use app_domains::{core::models::AppContext, flows::traits::FlowProvider};
 
 use super::File;
 use crate::{
@@ -14,13 +14,7 @@ use crate::{
 fn context(configuration: &[(&str, &str)]) -> (AppContext, Arc<LoggerRecording>) {
     let logger = Arc::new(LoggerRecording::new());
     let configuration: ConfigurationMap = configuration.iter().copied().collect();
-    let ctx = AppContext::new(
-        "test".to_string(),
-        std::env::temp_dir().to_string_lossy().to_string(),
-        Arc::new(configuration),
-        logger.clone(),
-    )
-    .unwrap();
+    let ctx = AppContext::new("test".to_string(), Arc::new(configuration), logger.clone());
     (ctx, logger)
 }
 
@@ -39,9 +33,9 @@ spec:
     )
 }
 
-fn prompt_of(flow: &app_domains::inference::models::Flow) -> String {
+fn prompt_of(flow: &app_domains::flows::models::Definition) -> String {
     match &flow.spec.steps[0].action {
-        app_domains::inference::models::FlowAction::Agent(arguments) => arguments.prompt.clone(),
+        app_domains::flows::models::Action::Agent(arguments) => arguments.prompt.clone(),
         _ => panic!("expected agent step"),
     }
 }
@@ -55,7 +49,7 @@ async fn picks_up_added_changed_and_removed_files() {
 
     assert!(
         provider
-            .get_by_webhook(&ctx, "hook")
+            .get_by_webhook(&ctx, "hook", "secret")
             .await
             .unwrap()
             .is_none()
@@ -64,7 +58,7 @@ async fn picks_up_added_changed_and_removed_files() {
     let file = dir.path().join("my_flow.yaml");
     fs::write(&file, flow_yaml("my_flow", "hook", "first")).unwrap();
     let flow = provider
-        .get_by_webhook(&ctx, "hook")
+        .get_by_webhook(&ctx, "hook", "secret")
         .await
         .unwrap()
         .unwrap();
@@ -72,7 +66,7 @@ async fn picks_up_added_changed_and_removed_files() {
 
     fs::write(&file, flow_yaml("my_flow", "hook", "second")).unwrap();
     let flow = provider
-        .get_by_webhook(&ctx, "hook")
+        .get_by_webhook(&ctx, "hook", "secret")
         .await
         .unwrap()
         .unwrap();
@@ -81,7 +75,7 @@ async fn picks_up_added_changed_and_removed_files() {
     fs::remove_file(&file).unwrap();
     assert!(
         provider
-            .get_by_webhook(&ctx, "hook")
+            .get_by_webhook(&ctx, "hook", "secret")
             .await
             .unwrap()
             .is_none()
@@ -108,7 +102,7 @@ async fn skips_invalid_flows_with_a_warning() {
     .unwrap();
 
     let flow = provider
-        .get_by_webhook(&ctx, "hook")
+        .get_by_webhook(&ctx, "hook", "secret")
         .await
         .unwrap()
         .unwrap();
@@ -121,13 +115,57 @@ async fn skips_invalid_flows_with_a_warning() {
 }
 
 #[tokio::test]
+async fn returns_the_flow_only_for_its_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir_path = dir.path().to_string_lossy().to_string();
+    let (ctx, _) = context(&[("flows.path", &dir_path)]);
+    let provider = File::new(&ctx);
+    fs::write(
+        dir.path().join("my_flow.yaml"),
+        flow_yaml("my_flow", "hook", "x"),
+    )
+    .unwrap();
+
+    for token in ["wrong", "secre", "secret2", ""] {
+        let flow = provider.get_by_webhook(&ctx, "hook", token).await.unwrap();
+        assert!(flow.is_none(), "{}", token);
+    }
+    let flow = provider
+        .get_by_webhook(&ctx, "other", "secret")
+        .await
+        .unwrap();
+    assert!(flow.is_none());
+    let flow = provider
+        .get_by_webhook(&ctx, "hook", "secret")
+        .await
+        .unwrap();
+    assert_eq!(flow.unwrap().metadata.name, "my_flow");
+}
+
+#[tokio::test]
+async fn flow_without_a_token_accepts_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir_path = dir.path().to_string_lossy().to_string();
+    let (ctx, _) = context(&[("flows.path", &dir_path)]);
+    let provider = File::new(&ctx);
+    fs::write(
+        dir.path().join("open.yaml"),
+        flow_yaml("open", "hook", "x").replace("token: secret", "token: \"\""),
+    )
+    .unwrap();
+
+    let flow = provider.get_by_webhook(&ctx, "hook", "").await.unwrap();
+    assert!(flow.is_none());
+}
+
+#[tokio::test]
 async fn no_flows_when_path_is_empty() {
     let (ctx, _) = context(&[("flows.path", "")]);
     let provider = File::new(&ctx);
 
     assert!(
         provider
-            .get_by_webhook(&ctx, "hook")
+            .get_by_webhook(&ctx, "hook", "secret")
             .await
             .unwrap()
             .is_none()
