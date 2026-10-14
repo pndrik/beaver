@@ -6,8 +6,21 @@ use serde::{Deserialize, Serialize};
 use super::Chroot;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Context {
-    pub name: String,
+    pub agent: String,
     #[serde(default)]
     pub chroot: Option<Chroot>,
+}
+
+impl Context {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.agent.is_empty() {
+            return Err("agent is empty".to_string());
+        }
+        if let Some(chroot) = &self.chroot {
+            chroot.validate()?;
+        }
+        Ok(())
+    }
 }

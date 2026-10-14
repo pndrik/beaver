@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct AgentArguments {
-    pub agent: String,
     pub prompt: String,
 }

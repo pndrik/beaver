@@ -6,7 +6,17 @@ use serde::{Deserialize, Serialize};
 use super::TriggerWebhook;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Triggers {
     #[serde(default)]
     pub webhook: Option<TriggerWebhook>,
+}
+
+impl Triggers {
+    pub fn validate(&self) -> Result<(), String> {
+        match &self.webhook {
+            Some(webhook) => webhook.validate(),
+            None => Ok(()),
+        }
+    }
 }

@@ -51,36 +51,37 @@ prompt: |
 A flow is a pipeline of steps triggered through the same `/hooks/{name}` endpoint. Flows live in `flows.path` (one `<name>.yaml` per flow, `metadata.name` must match the file name) and are re-read on every trigger, so adding, editing or removing a file needs no restart.
 
 ```yaml
+version: 1
 metadata:
   name: pr_review_flow
   description: Clone and review a PR
 spec:
+  contexts:
+    work:
+      agent: coder
+      chroot: { path: "runs/{{ Ctx.trace_id }}", create: true, delete: true }
   triggers:
     webhook: { name: pr_review_flow, token: "REPLACE_ME" }
   steps:
     - name: clone
-      context:
-        name: work
-        chroot: { path: "runs/{{ Ctx.trace_id }}", create_if_missing: true, delete: true }
-      action:
-        type: tool
-        arguments:
-          tool: git_clone
-          scopes: ["*"]
-          arguments: { url: "{{ Body.repository.links.html.href }}", path: "/repo" }
+      context: work
+      type: tool
+      arguments:
+        tool: git_clone
+        scopes: ["*"]
+        arguments: { url: "{{ Body.repository.links.html.href }}", path: "/repo" }
     - name: review
-      context: { name: work }
-      action:
-        type: agent
-        arguments:
-          agent: coder
-          prompt: "Review the PR in /repo. Clone said: {{ Steps.clone.output }}"
+      context: work
+      type: agent
+      arguments:
+        prompt: "Review the PR in /repo. Clone said: {{ Steps.clone.output }}"
 ```
 
-- **Steps** run in order; the first failing step stops the flow. Step names must be identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`) and unique.
-- **`agent` steps** send the rendered `prompt` to `agent`. **`tool` steps** call `tool` directly with the rendered `arguments` and the given `scopes`, without an LLM.
-- **Contexts** are a conversation plus a working directory. Steps with the same `context.name` share both, so a later agent step continues the earlier conversation and a tool step's result is appended to it. Every context needs exactly one agent: at least one agent step, and all of its agent steps use the same agent. Tool steps run in that agent's conversation and chroot.
-- **`chroot.path`** is resolved against the global `context.chroot` and must stay inside it. `create_if_missing` creates it, `delete` removes it when the flow ends, whether it succeeded or not. Without `chroot` the global chroot is used, and only the first step of a context decides its chroot.
+- **`version`** is required and must be `1`. Unknown fields are rejected.
+- **Steps** run in order; the first failing step stops the flow. Step names must be identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`) and unique. Every step names a declared `context`.
+- **`agent` steps** send the rendered `prompt` to the context's agent. **`tool` steps** call `tool` directly with the rendered `arguments` and the given `scopes`, without an LLM.
+- **Contexts** are declared once under `spec.contexts`, keyed by an identifier name, each with one `agent` and an optional `chroot`. A context is a conversation plus a working directory: steps on the same context share both, so a later agent step continues the earlier conversation and a tool step's result is appended to it. Every declared context must be used by a step. A context is created when its first step runs.
+- **`chroot.path`** is resolved against the global `context.chroot` and must stay inside it. `create` creates it if it is missing, `delete` removes it when the flow ends, whether it succeeded or not. Without `chroot` the global chroot is used.
 - Unknown names and wrong tokens both get `401`.
 
 Prompts, chroot paths and every string in tool `arguments` are [MiniJinja](https://docs.rs/minijinja) templates (no HTML escaping) with these values:

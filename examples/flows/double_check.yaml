@@ -2,52 +2,57 @@
 # Trigger with:
 #   curl -X POST -H 'Authorization: Bearer REPLACE_ME' -H 'Content-Type: application/json' \
 #     -d '{"secret_number": 37}' localhost:8080/hooks/double_check
+version: 1
 metadata:
   name: double_check
   display_name: Double Check
   description: Agent A hands a number to agent B to double, then verifies B's answer.
 spec:
+  contexts:
+    dispatcher:
+      agent: dispatcher
+      chroot:
+        path: "runs/{{ Ctx.trace_id }}/dispatcher"
+        create: true
+        delete: true
+    calculator:
+      agent: calculator
+      chroot:
+        path: "runs/{{ Ctx.trace_id }}/calculator"
+        create: true
+        delete: true
   triggers:
     webhook:
       name: double_check
       token: "REPLACE_ME"
   steps:
     - name: brief
-      context:
-        name: dispatcher
-      action:
-        type: agent
-        arguments:
-          agent: dispatcher
-          prompt: |
-            We received this payload: {"secret_number": {{ Body.secret_number }}}
+      context: dispatcher
+      type: agent
+      arguments:
+        prompt: |
+          We received this payload: {"secret_number": {{ Body.secret_number }}}
 
-            Write the message for the next agent. It must contain the secret number,
-            the instruction to double it, and the instruction to reply with the
-            doubled number only, without repeating the secret number in any form.
-            Your last message is passed on as is.
+          Write the message for the next agent. It must contain the secret number,
+          the instruction to double it, and the instruction to reply with the
+          doubled number only, without repeating the secret number in any form.
+          Your last message is passed on as is.
 
     - name: compute
-      context:
-        name: calculator
-      action:
-        type: agent
-        arguments:
-          agent: calculator
-          prompt: "{{ Steps.brief.output }}"
+      context: calculator
+      type: agent
+      arguments:
+        prompt: "{{ Steps.brief.output }}"
 
     - name: verify
-      context:
-        name: dispatcher
-      action:
-        type: agent
-        arguments:
-          agent: dispatcher
-          prompt: |
-            The other agent answered:
+      context: dispatcher
+      type: agent
+      arguments:
+        prompt: |
+          The other agent answered:
 
-            {{ Steps.compute.output }}
+          {{ Steps.compute.output }}
 
-            Verify whether the job was done correctly: the answer must be exactly
-            double the secret number, and it must not reveal the secret number
-            itself. Reject it if either is not the case.
+          Verify whether the job was done correctly: the answer must be exactly
+          double the secret number, and it must not reveal the secret number
+          itself. Reject it if either is not the case.

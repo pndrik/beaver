@@ -62,7 +62,7 @@ pub(super) async fn global_chroot(ctx: &AppContext) -> Result<PathBuf, AppError>
 pub(super) async fn prepare(
     ctx: &AppContext,
     path: &str,
-    create_if_missing: bool,
+    create: bool,
     delete: bool,
 ) -> Result<PathBuf, AppError> {
     let global = global_chroot(ctx).await?;
@@ -86,7 +86,7 @@ pub(super) async fn prepare(
     }
 
     if !resolved.exists() {
-        if !create_if_missing {
+        if !create {
             return Err(invalid(ctx, format!("Chroot '{}' does not exist", path)));
         }
         fs::create_dir_all(&resolved)

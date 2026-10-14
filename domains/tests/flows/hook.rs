@@ -8,14 +8,18 @@ use crate::support;
 fn flow(name: &str, hook: &str, token: &str) -> Definition {
     yaml_serde::from_str(&format!(
         r#"
+version: 1
 metadata: {{ name: {name} }}
 spec:
+  contexts:
+    c: {{ agent: a }}
   triggers:
     webhook: {{ name: {hook}, token: "{token}" }}
   steps:
     - name: s
-      context: {{ name: c }}
-      action: {{ type: agent, arguments: {{ agent: a, prompt: p }} }}
+      context: c
+      type: agent
+      arguments: {{ prompt: p }}
 "#
     ))
     .unwrap()

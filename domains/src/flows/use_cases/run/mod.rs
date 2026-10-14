@@ -10,7 +10,7 @@ use crate::{
     core::models::{AppContext, AppError},
     flows::{
         Flows,
-        models::{Action, AgentArguments, Chroot, Definition, Step, ToolArguments},
+        models::{Action, AgentArguments, Context, Definition, Step, ToolArguments},
     },
     inference::{Inference, models::Conversation},
     tools::{
@@ -25,7 +25,6 @@ mod values;
 /// State of a named context within one flow run.
 struct RunContext {
     chroot: PathBuf,
-    declared_chroot: Option<Chroot>,
     conversation: Conversation,
 }
 
@@ -109,39 +108,31 @@ impl Flows {
         tools: &Tools,
         run: &mut FlowRun,
     ) -> Result<(), AppError> {
-        match run.contexts.get(&step.context.name) {
-            None => {
-                let context = self
-                    .context(
-                        ctx,
-                        flow,
-                        step,
-                        values,
-                        inference,
-                        tools,
-                        &mut run.delete_on_finish,
-                    )
-                    .await?;
-                run.contexts.insert(step.context.name.clone(), context);
-            }
-            Some(context) => {
-                if step.context.chroot.is_some() && step.context.chroot != context.declared_chroot {
-                    ctx.logger
-                        .warn(
-                            ctx,
-                            &format!(
-                                "Flow '{}' step '{}' declares a different chroot for context '{}'; keeping the first one",
-                                flow.metadata.name, step.name, step.context.name
-                            ),
-                        )
-                        .await;
-                }
-            }
+        if !run.contexts.contains_key(&step.context) {
+            let declaration = flow.spec.contexts.get(&step.context).ok_or_else(|| {
+                app_error!(
+                    Validation,
+                    "flow_invalid",
+                    &format!("Context '{}' is not declared", step.context),
+                    ctx.clone()
+                )
+            })?;
+            let context = self
+                .context(
+                    ctx,
+                    declaration,
+                    values,
+                    inference,
+                    tools,
+                    &mut run.delete_on_finish,
+                )
+                .await?;
+            run.contexts.insert(step.context.clone(), context);
         }
 
         let context = run
             .contexts
-            .get_mut(&step.context.name)
+            .get_mut(&step.context)
             .expect("context was just created");
 
         let output = match &step.action {
@@ -158,7 +149,7 @@ impl Flows {
             step.name.clone(),
             json!({
                 "output": output,
-                "context": step.context.name,
+                "context": step.context,
                 "chroot": chroot::relative(&global, &context.chroot),
                 "messages": messages,
             }),
@@ -167,26 +158,22 @@ impl Flows {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn context(
         &self,
         ctx: &AppContext,
-        flow: &Definition,
-        step: &Step,
+        declaration: &Context,
         values: &Value,
         inference: &Inference,
         tools: &Tools,
         delete_on_finish: &mut Vec<PathBuf>,
     ) -> Result<RunContext, AppError> {
-        let chroot = match &step.context.chroot {
+        let chroot = match &declaration.chroot {
             Some(declared) => {
                 let path = self
                     .template_engine
                     .render(ctx, &declared.path, values)
                     .await?;
-                let chroot =
-                    chroot::prepare(ctx, &path, declared.create_if_missing, declared.delete)
-                        .await?;
+                let chroot = chroot::prepare(ctx, &path, declared.create, declared.delete).await?;
                 if declared.delete && !delete_on_finish.contains(&chroot) {
                     delete_on_finish.push(chroot.clone());
                 }
@@ -195,21 +182,12 @@ impl Flows {
             None => chroot::global_chroot(ctx).await?,
         };
 
-        let agent = flow.context_agent(&step.context.name).ok_or_else(|| {
-            app_error!(
-                Validation,
-                "flow_invalid",
-                &format!("Context '{}' has no agent step", step.context.name),
-                ctx.clone()
-            )
-        })?;
         let conversation = inference
-            .new_conversation(ctx, agent, tools, &chroot.to_string_lossy())
+            .new_conversation(ctx, &declaration.agent, tools, &chroot.to_string_lossy())
             .await?;
 
         Ok(RunContext {
             chroot,
-            declared_chroot: step.context.chroot.clone(),
             conversation,
         })
     }
@@ -224,24 +202,14 @@ impl Flows {
         tools: &Tools,
     ) -> Result<String, AppError> {
         let conversation = &mut context.conversation;
-        if conversation.agent.metadata.name != arguments.agent {
-            return Err(app_error!(
-                Validation,
-                "flow_invalid",
-                &format!(
-                    "Context belongs to agent '{}' and can't be used by agent '{}'",
-                    conversation.agent.metadata.name, arguments.agent
-                ),
-                ctx.clone()
-            ));
-        }
+        let agent = conversation.agent.metadata.name.clone();
 
         let prompt = self
             .template_engine
             .render(ctx, &arguments.prompt, values)
             .await?;
         ctx.logger
-            .trace(ctx, &format!("[prompt → {}]: {}", arguments.agent, prompt))
+            .trace(ctx, &format!("[prompt → {}]: {}", agent, prompt))
             .await;
 
         conversation.add_user_message(prompt);
@@ -255,7 +223,7 @@ impl Flows {
             .map(|message| message.content.clone())
             .unwrap_or_default();
         ctx.logger
-            .trace(ctx, &format!("[{}]: {}", arguments.agent, output))
+            .trace(ctx, &format!("[{}]: {}", agent, output))
             .await;
 
         Ok(output)

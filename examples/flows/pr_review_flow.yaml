@@ -1,36 +1,35 @@
 ---
+version: 1
 metadata:
   name: pr_review_flow
   display_name: PR Review Flow
   description: Clones the repository of a Bitbucket pull request and reviews it.
 spec:
+  contexts:
+    work:
+      agent: coder
+      chroot:
+        path: "runs/{{ Ctx.trace_id }}"
+        create: true
+        delete: true
   triggers:
     webhook:
       name: pr_review_flow
       token: "REPLACE_ME"
   steps:
     - name: clone
-      context:
-        name: work
-        chroot:
-          path: "runs/{{ Ctx.trace_id }}"
-          create_if_missing: true
-          delete: true
-      action:
-        type: tool
+      context: work
+      type: tool
+      arguments:
+        tool: git_clone
+        scopes: ["*"]
         arguments:
-          tool: git_clone
-          scopes: ["*"]
-          arguments:
-            url: "{{ Body.repository.links.html.href }}"
-            path: "/repo"
+          url: "{{ Body.repository.links.html.href }}"
+          path: "/repo"
     - name: review
-      context:
-        name: work
-      action:
-        type: agent
-        arguments:
-          agent: coder
-          prompt: |
-            Review the pull request "{{ Body.pullrequest.title }}" in /repo.
-            Clone said: {{ Steps.clone.output }}
+      context: work
+      type: agent
+      arguments:
+        prompt: |
+          Review the pull request "{{ Body.pullrequest.title }}" in /repo.
+          Clone said: {{ Steps.clone.output }}
