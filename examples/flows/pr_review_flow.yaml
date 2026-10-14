@@ -20,6 +20,11 @@ spec:
     - name: clone
       context: work
       type: tool
+      # Only open pull requests into main or develop.
+      when: &reviewable
+        - all:
+          - { left: "{{ Body.pullrequest.state }}", operator: "==", right: OPEN }
+          - { left: "{{ Body.pullrequest.destination.branch.name }}", operator: "~=", right: "^(main|develop)$" }
       arguments:
         tool: git_clone
         scopes: ["*"]
@@ -29,6 +34,7 @@ spec:
     - name: review
       context: work
       type: agent
+      when: *reviewable
       arguments:
         prompt: |
           Review the pull request "{{ Body.pullrequest.title }}" in /repo.

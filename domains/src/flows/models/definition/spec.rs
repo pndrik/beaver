@@ -4,7 +4,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
-use super::{Context, Step, Triggers, identifier};
+use super::{Action, Context, Step, Triggers, identifier, invalid, within};
+use crate::core::models::{AppContext, AppError};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -17,46 +18,70 @@ pub struct Spec {
 }
 
 impl Spec {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
         if self.steps.is_empty() {
-            return Err("spec.steps is empty".to_string());
+            return Err(invalid(ctx, "spec.steps is empty"));
         }
 
         for (name, context) in &self.contexts {
-            identifier("context", name)?;
+            identifier(ctx, "context", name)?;
             context
-                .validate()
-                .map_err(|e| format!("context '{}': {}", name, e))?;
+                .validate(ctx)
+                .map_err(|err| within(&format!("context '{}'", name), err))?;
         }
 
-        self.triggers.validate()?;
+        self.triggers.validate(ctx)?;
 
         let mut step_names = HashSet::new();
         let mut used_contexts = HashSet::new();
-        for step in &self.steps {
-            step.validate()?;
-
-            if !step_names.insert(step.name.as_str()) {
-                return Err(format!("step name '{}' is used more than once", step.name));
-            }
-
-            if !self.contexts.contains_key(&step.context) {
-                return Err(format!(
-                    "step '{}' uses unknown context '{}'",
-                    step.name, step.context
-                ));
-            }
-            used_contexts.insert(step.context.as_str());
-        }
+        self.check_steps(ctx, &self.steps, &mut step_names, &mut used_contexts)?;
 
         if let Some(name) = self
             .contexts
             .keys()
             .find(|name| !used_contexts.contains(name.as_str()))
         {
-            return Err(format!("context '{}' is not used by any step", name));
+            return Err(invalid(
+                ctx,
+                &format!("context '{}' is not used by any step", name),
+            ));
         }
 
+        Ok(())
+    }
+
+    /// Validates `steps` and the steps nested in their loops.
+    fn check_steps<'a>(
+        &'a self,
+        ctx: &AppContext,
+        steps: &'a [Step],
+        step_names: &mut HashSet<&'a str>,
+        used_contexts: &mut HashSet<&'a str>,
+    ) -> Result<(), AppError> {
+        for step in steps {
+            step.validate(ctx)?;
+
+            if !step_names.insert(step.name.as_str()) {
+                return Err(invalid(
+                    ctx,
+                    &format!("step name '{}' is used more than once", step.name),
+                ));
+            }
+
+            if let Some(context) = &step.context {
+                if !self.contexts.contains_key(context) {
+                    return Err(invalid(
+                        ctx,
+                        &format!("step '{}' uses unknown context '{}'", step.name, context),
+                    ));
+                }
+                used_contexts.insert(context.as_str());
+            }
+
+            if let Action::Loop(arguments) = &step.action {
+                self.check_steps(ctx, &arguments.steps, step_names, used_contexts)?;
+            }
+        }
         Ok(())
     }
 }

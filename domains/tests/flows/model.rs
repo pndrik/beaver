@@ -3,7 +3,7 @@
 
 use serde_json::json;
 
-use app_domains::flows::models::{Action, Chroot, Definition};
+use app_domains::flows::models::{Action, Chroot, Condition, Definition, Operator};
 
 use crate::support;
 
@@ -50,7 +50,7 @@ fn parses_example() {
     );
 
     let clone = &flow.spec.steps[0];
-    assert_eq!(clone.context, "work");
+    assert_eq!(clone.context.as_deref(), Some("work"));
     let Action::Tool(tool) = &clone.action else {
         panic!("expected tool action");
     };
@@ -58,8 +58,20 @@ fn parses_example() {
     assert_eq!(tool.scopes, vec!["*"]);
     assert_eq!(tool.arguments["path"], json!("/repo"));
 
+    let when = clone.when.as_ref().unwrap();
+    let Condition::All { all } = &when[0] else {
+        panic!("expected all");
+    };
+    assert!(matches!(
+        all[1],
+        Condition::Compare {
+            operator: Operator::Match,
+            ..
+        }
+    ));
+
     let review = &flow.spec.steps[1];
-    assert_eq!(review.context, "work");
+    assert_eq!(review.context.as_deref(), Some("work"));
     assert!(matches!(review.action, Action::Agent(_)));
 
     let (ctx, _) = support::temp_context();
@@ -233,4 +245,189 @@ fn rejects_empty_webhook_token() {
         "  triggers:\n    webhook: { name: w, token: \"\" }\n  steps:",
     );
     assert!(validation_error(&yaml).contains("triggers.webhook.token"));
+}
+
+/// A flow with context `c` and the given steps, indented by four spaces.
+fn flow_yaml(steps: &str) -> String {
+    format!(
+        "version: 1\nmetadata: {{ name: f }}\nspec:\n  contexts:\n    c: {{ agent: x }}\n  steps:\n{}",
+        steps
+    )
+}
+
+const AGENT: &str = "{ name: a, context: c, type: agent, arguments: { prompt: hi } }";
+
+#[test]
+fn parses_nested_conditions() {
+    let yaml = flow_yaml(
+        r#"
+    - name: a
+      context: c
+      type: agent
+      when:
+        - { left: "{{ Body.region }}", operator: "~=", right: "^eu-" }
+        - all:
+          - { left: "{{ Body.env }}", operator: "==", right: production }
+          - any:
+            - { left: "{{ Body.n }}", operator: ">=", right: "3" }
+            - { left: "{{ Body.n }}", operator: "!=", right: "0" }
+      arguments: { prompt: hi }
+"#,
+    );
+    let flow = parse(&yaml);
+    let (ctx, _) = support::temp_context();
+    flow.validate(&ctx).unwrap();
+
+    let when = flow.spec.steps[0].when.as_ref().unwrap();
+    assert_eq!(when.len(), 2);
+    let Condition::All { all } = &when[1] else {
+        panic!("expected all");
+    };
+    let Condition::Any { any } = &all[1] else {
+        panic!("expected any");
+    };
+    assert!(matches!(
+        any[0],
+        Condition::Compare {
+            operator: Operator::Ge,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rejects_empty_condition_lists() {
+    for when in ["[]", "[{ any: [] }]", "[{ all: [{ any: [] }] }]"] {
+        let yaml = flow_yaml(&format!(
+            "    - {{ name: a, context: c, type: agent, when: {}, arguments: {{ prompt: hi }} }}",
+            when
+        ));
+        assert!(validation_error(&yaml).contains("is empty"), "{}", when);
+    }
+}
+
+#[test]
+fn rejects_unknown_operators_and_keys() {
+    for item in [
+        "{ left: a, operator: \"=~\", right: b }",
+        "{ left: a, operator: \"==\", right: b, extra: c }",
+        "{ none: [{ left: a, operator: \"==\", right: b }] }",
+    ] {
+        let yaml = flow_yaml(&format!(
+            "    - {{ name: a, context: c, type: agent, when: [{}], arguments: {{ prompt: hi }} }}",
+            item
+        ));
+        parse_error(&yaml);
+    }
+}
+
+#[test]
+fn compares_with_operators() {
+    let (ctx, _) = support::temp_context();
+    assert!(Operator::Eq.compare(&ctx, "a", "a").unwrap());
+    assert!(Operator::Ne.compare(&ctx, "a", "b").unwrap());
+    assert!(Operator::Lt.compare(&ctx, "2", "10").unwrap());
+    assert!(Operator::Le.compare(&ctx, " 3 ", "3.0").unwrap());
+    assert!(!Operator::Gt.compare(&ctx, "2", "10").unwrap());
+    assert!(Operator::Ge.compare(&ctx, "10", "2").unwrap());
+    assert!(
+        Operator::Match
+            .compare(&ctx, "LGTM, Approved", "(?i)approved")
+            .unwrap()
+    );
+    assert!(
+        !Operator::Match
+            .compare(&ctx, "rejected", "^approved$")
+            .unwrap()
+    );
+
+    assert!(
+        Operator::Gt
+            .compare(&ctx, "abc", "1")
+            .unwrap_err()
+            .internal_message
+            .contains("not a number")
+    );
+    assert!(
+        Operator::Match
+            .compare(&ctx, "a", "(")
+            .unwrap_err()
+            .internal_message
+            .contains("invalid regex")
+    );
+}
+
+const LOOP: &str = r#"
+    - name: l
+      type: loop
+      arguments:
+        until: [{ left: "{{ Steps.a.output }}", operator: "~=", right: done }]
+        steps:
+          - { name: a, context: c, type: agent, arguments: { prompt: hi } }
+"#;
+
+#[test]
+fn parses_loop_with_default_max() {
+    let flow = parse(&flow_yaml(LOOP));
+    let (ctx, _) = support::temp_context();
+    flow.validate(&ctx).unwrap();
+
+    let Action::Loop(arguments) = &flow.spec.steps[0].action else {
+        panic!("expected loop action");
+    };
+    assert_eq!(arguments.max, 3);
+    assert_eq!(arguments.steps.len(), 1);
+    assert_eq!(arguments.until.as_ref().unwrap().len(), 1);
+}
+
+#[test]
+fn rejects_invalid_loops() {
+    let with_context = flow_yaml(LOOP).replace("type: loop", "type: loop\n      context: c");
+    assert!(validation_error(&with_context).contains("step 'l': a loop has no context"));
+
+    for max in ["0", "101"] {
+        let yaml = flow_yaml(LOOP).replace(
+            "arguments:\n",
+            &format!("arguments:\n        max: {}\n", max),
+        );
+        assert!(
+            validation_error(&yaml).contains("between 1 and 100"),
+            "{}",
+            max
+        );
+    }
+
+    let empty = flow_yaml(&format!(
+        "    - {{ name: l, type: loop, arguments: {{ steps: [] }} }}\n    - {}",
+        AGENT
+    ));
+    assert!(validation_error(&empty).contains("arguments.steps is empty"));
+
+    let empty_until = flow_yaml(LOOP).replace(
+        "until: [{ left: \"{{ Steps.a.output }}\", operator: \"~=\", right: done }]",
+        "until: []",
+    );
+    assert!(validation_error(&empty_until).contains("arguments.until is empty"));
+}
+
+#[test]
+fn rejects_agent_step_without_context() {
+    let yaml = flow_yaml(&format!(
+        "    - {{ name: b, type: agent, arguments: {{ prompt: hi }} }}\n    - {}",
+        AGENT
+    ));
+    assert!(validation_error(&yaml).contains("step 'b': context is missing"));
+}
+
+#[test]
+fn checks_names_and_contexts_inside_loops() {
+    let duplicate = flow_yaml(&format!("{}    - {}\n", LOOP, AGENT));
+    assert!(validation_error(&duplicate).contains("step name 'a' is used more than once"));
+
+    let unknown = flow_yaml(LOOP).replace("context: c", "context: d");
+    assert!(validation_error(&unknown).contains("step 'a' uses unknown context 'd'"));
+
+    // `c` is only used inside the loop, which counts.
+    let (ctx, _) = support::temp_context();
+    parse(&flow_yaml(LOOP)).validate(&ctx).unwrap();
 }

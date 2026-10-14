@@ -41,6 +41,19 @@ async fn run(contexts: &str, steps: &str) -> Run {
 }
 
 async fn run_with(contexts: &str, steps: &str, setup: impl FnOnce(&TempDir)) -> Run {
+    run_full(contexts, steps, json!({"pr": {"title": "Fix bug"}}), setup).await
+}
+
+async fn run_body(steps: &str, body: serde_json::Value) -> Run {
+    run_full(CODER, steps, body, |_| {}).await
+}
+
+async fn run_full(
+    contexts: &str,
+    steps: &str,
+    body: serde_json::Value,
+    setup: impl FnOnce(&TempDir),
+) -> Run {
     let global = tempfile::tempdir().unwrap();
     setup(&global);
     let (ctx, logger) = support::context(&global.path().to_string_lossy());
@@ -55,7 +68,7 @@ async fn run_with(contexts: &str, steps: &str, setup: impl FnOnce(&TempDir)) -> 
         .run(
             &ctx,
             &flow(contexts, steps),
-            &json!({"pr": {"title": "Fix bug"}}),
+            &body,
             &json!({"mode": "fast"}),
             &inference,
             &tools,
@@ -370,4 +383,199 @@ spec:
     assert!(err.internal_message.contains("unknown context 'd'"));
     assert!(scripted.calls().is_empty());
     assert!(!global.path().join("work").exists());
+}
+
+fn logged(logger: &LoggerRecording, level: RecordedLevel, text: &str) -> bool {
+    logger
+        .messages(level)
+        .iter()
+        .any(|message| message.contains(text))
+}
+
+#[tokio::test]
+async fn false_when_skips_the_step() {
+    let run = run(
+        CODER,
+        r#"
+    - name: a
+      context: c
+      type: agent
+      when: [{ left: "{{ Body.pr.title }}", operator: "==", right: "Other" }]
+      arguments: { prompt: "x" }
+    - { name: b, context: c, type: agent, arguments: { prompt: "{{ Steps.a.output }}" } }
+"#,
+    )
+    .await;
+
+    run.result.unwrap();
+    assert_eq!(run.calls.len(), 1);
+    assert_eq!(run.calls[0].prompt, "<NULL>");
+    assert!(logged(&run.logger, RecordedLevel::Info, "step 'a' skipped"));
+    assert!(!logged(
+        &run.logger,
+        RecordedLevel::Info,
+        "step 'a' started"
+    ));
+}
+
+#[tokio::test]
+async fn when_runs_the_step_if_any_item_is_true() {
+    let run = run_body(
+        r#"
+    - name: a
+      context: c
+      type: agent
+      when:
+        - { left: "{{ Body.pr.title }}", operator: "==", right: "Other" }
+        - all:
+          - { left: "{{ Body.pr.title }}", operator: "~=", right: "(?i)^fix" }
+          - any:
+            - { left: "{{ Body.n }}", operator: "<", right: "1" }
+            - { left: "{{ Body.n }}", operator: ">=", right: "{{ Body.min }}" }
+      arguments: { prompt: "x" }
+"#,
+        json!({"pr": {"title": "Fix bug"}, "n": 5, "min": 4.5}),
+    )
+    .await;
+
+    run.result.unwrap();
+    assert_eq!(run.calls.len(), 1);
+}
+
+#[tokio::test]
+async fn non_numeric_comparison_fails_the_flow() {
+    let run = run(
+        CODER,
+        r#"
+    - name: a
+      context: c
+      type: agent
+      when: [{ left: "{{ Body.pr.title }}", operator: ">", right: "1" }]
+      arguments: { prompt: "x" }
+"#,
+    )
+    .await;
+
+    let err = run.result.unwrap_err();
+    assert_eq!(err.translation_key, "flow_condition_invalid");
+    assert!(err.internal_message.contains("step 'a' failed"));
+    assert!(err.internal_message.contains("'Fix bug' is not a number"));
+    assert!(run.calls.is_empty());
+}
+
+#[tokio::test]
+async fn loop_runs_max_times_and_warns() {
+    let run = run(
+        CODER,
+        r#"
+    - name: l
+      type: loop
+      arguments:
+        steps:
+          - { name: a, context: c, type: agent, arguments: { prompt: "x" } }
+    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Steps.l.output }}|{{ Steps.a.output }}" } }
+"#,
+    )
+    .await;
+
+    run.result.unwrap();
+    assert_eq!(run.calls.len(), 4);
+    assert_eq!(run.calls[3].prompt, "3|reply 3: x");
+    assert!(logged(
+        &run.logger,
+        RecordedLevel::Warn,
+        "step 'l' stopped after max 3"
+    ));
+}
+
+#[tokio::test]
+async fn loop_stops_when_until_is_true() {
+    let run = run(
+        CODER,
+        r#"
+    - name: l
+      type: loop
+      arguments:
+        max: 5
+        until: [{ left: "{{ Steps.a.output }}", operator: "~=", right: "^reply 2:" }]
+        steps:
+          - { name: a, context: c, type: agent, arguments: { prompt: "x" } }
+    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Steps.l.output }}|{{ Steps.a.output }}" } }
+"#,
+    )
+    .await;
+
+    run.result.unwrap();
+    assert_eq!(run.calls.len(), 3);
+    assert_eq!(run.calls[2].prompt, "2|reply 2: x");
+    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
+}
+
+#[tokio::test]
+async fn when_gates_the_loop_and_its_inner_steps() {
+    let skipped = run(
+        CODER,
+        r#"
+    - name: l
+      type: loop
+      when: [{ left: "{{ Body.pr.title }}", operator: "==", right: "Other" }]
+      arguments:
+        steps:
+          - { name: a, context: c, type: agent, arguments: { prompt: "x" } }
+    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Steps.l.output }}" } }
+"#,
+    )
+    .await;
+    skipped.result.unwrap();
+    assert_eq!(skipped.calls.len(), 1);
+    assert_eq!(skipped.calls[0].prompt, "<NULL>");
+
+    let inner = run(
+        CODER,
+        r#"
+    - name: l
+      type: loop
+      arguments:
+        steps:
+          - { name: a, context: c, type: agent, arguments: { prompt: "x" } }
+          - name: b
+            context: c
+            type: agent
+            when: [{ left: "{{ Steps.a.output }}", operator: "~=", right: "^reply 1:" }]
+            arguments: { prompt: "y" }
+"#,
+    )
+    .await;
+    inner.result.unwrap();
+    let prompts: Vec<&str> = inner
+        .calls
+        .iter()
+        .map(|call| call.prompt.as_str())
+        .collect();
+    assert_eq!(prompts, ["x", "y", "x", "x"]);
+}
+
+#[tokio::test]
+async fn failing_inner_step_fails_the_flow_and_cleans_up() {
+    let run = run(
+        r#"    c: { agent: coder, chroot: { path: "runs/{{ Ctx.trace_id }}", create: true, delete: true } }"#,
+        r#"
+    - name: l
+      type: loop
+      arguments:
+        steps:
+          - { name: ask, context: c, type: agent, arguments: { prompt: "x" } }
+          - { name: broken, context: c, type: tool, arguments: { tool: fail } }
+    - { name: never, context: c, type: agent, arguments: { prompt: "y" } }
+"#,
+    )
+    .await;
+
+    let err = run.result.unwrap_err();
+    assert!(
+        err.internal_message
+            .starts_with("Flow 'test_flow' step 'broken' failed")
+    );
+    assert_eq!(run.calls.len(), 1);
+    assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
 }

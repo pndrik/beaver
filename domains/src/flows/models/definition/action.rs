@@ -3,25 +3,23 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{AgentArguments, ToolArguments};
+use super::{ArgumentsAgent, ArgumentsLoop, ArgumentsTool};
+use crate::core::models::{AppContext, AppError};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", content = "arguments", rename_all = "snake_case")]
 pub enum Action {
-    Agent(AgentArguments),
-    Tool(ToolArguments),
+    Agent(ArgumentsAgent),
+    Tool(ArgumentsTool),
+    Loop(ArgumentsLoop),
 }
 
 impl Action {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
         match self {
-            Action::Agent(arguments) if arguments.prompt.is_empty() => {
-                Err("arguments.prompt is empty".to_string())
-            }
-            Action::Tool(arguments) if arguments.tool.is_empty() => {
-                Err("arguments.tool is empty".to_string())
-            }
-            _ => Ok(()),
+            Action::Agent(arguments) => arguments.validate(ctx),
+            Action::Tool(arguments) => arguments.validate(ctx),
+            Action::Loop(arguments) => arguments.validate(ctx),
         }
     }
 }

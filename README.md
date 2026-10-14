@@ -78,13 +78,26 @@ spec:
 ```
 
 - **`version`** is required and must be `1`. Unknown fields are rejected.
-- **Steps** run in order; the first failing step stops the flow. Step names must be identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`) and unique. Every step names a declared `context`.
+- **Steps** run in order; the first failing step stops the flow. Step names must be identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`) and unique. Every agent and tool step names a declared `context`.
 - **`agent` steps** send the rendered `prompt` to the context's agent. **`tool` steps** call `tool` directly with the rendered `arguments` and the given `scopes`, without an LLM.
 - **Contexts** are declared once under `spec.contexts`, keyed by an identifier name, each with one `agent` and an optional `chroot`. A context is a conversation plus a working directory: steps on the same context share both, so a later agent step continues the earlier conversation and a tool step's result is appended to it. Every declared context must be used by a step. A context is created when its first step runs.
 - **`chroot.path`** is resolved against the global `context.chroot` and must stay inside it. `create` creates it if it is missing, `delete` removes it when the flow ends, whether it succeeded or not. Without `chroot` the global chroot is used.
 - Unknown names and wrong tokens both get `401`.
+- **`when`** on any step is a list of conditions; the step runs if **any** of them is true, and is skipped (logged, no `Steps.<step>` entry) otherwise. A condition is `{ left, operator, right }`, `{ all: [...] }` or `{ any: [...] }`, nested freely. `left` and `right` are templates. `==`/`!=` compare strings, `<`, `<=`, `>`, `>=` compare numbers and `~=` matches `left` against the regex `right`. A non-number in a numeric comparison or an invalid regex fails the step. Empty lists and unknown operators are rejected when the flow loads.
+- **`loop` steps** have no `context` and take `arguments: { steps, max, until }`. They run `steps` in order, then check `until` (same syntax as `when`), and stop once it is true or after `max` iterations (default `3`, at most `100`), logging a warning in the latter case. Inner steps write to the same `Steps` map, so each iteration overwrites the previous one, and step names must be unique across the whole flow. After the loop, `Steps.<loop>.output` is the number of iterations that ran. `when` on the loop gates the whole loop, `when` on an inner step is checked per iteration.
 
-Prompts, chroot paths and every string in tool `arguments` are [MiniJinja](https://docs.rs/minijinja) templates (no HTML escaping) with these values:
+  ```yaml
+  - name: refine
+    type: loop
+    arguments:
+      max: 3
+      until: [{ left: "{{ Steps.check.output }}", operator: "~=", right: "(?i)approved" }]
+      steps:
+        - { name: fix, context: work, type: agent, arguments: { prompt: "Fix the findings: {{ Steps.check.output }}" } }
+        - { name: check, context: work, type: agent, arguments: { prompt: "Review /repo. Answer APPROVED if it is fine." } }
+  ```
+
+Prompts, chroot paths, condition sides and every string in tool `arguments` are [MiniJinja](https://docs.rs/minijinja) templates (no HTML escaping) with these values:
 
 | Variable | Content |
 | --- | --- |

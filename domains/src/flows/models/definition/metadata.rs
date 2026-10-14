@@ -3,6 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::invalid;
+use crate::core::models::{AppContext, AppError};
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Metadata {
@@ -14,9 +17,9 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
         if self.name.is_empty() {
-            return Err("metadata.name is missing".to_string());
+            return Err(invalid(ctx, "metadata.name is missing"));
         }
         Ok(())
     }

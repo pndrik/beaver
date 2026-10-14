@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::TriggerWebhook;
+use crate::core::models::{AppContext, AppError};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(deny_unknown_fields)]
@@ -13,9 +14,9 @@ pub struct Triggers {
 }
 
 impl Triggers {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
         match &self.webhook {
-            Some(webhook) => webhook.validate(),
+            Some(webhook) => webhook.validate(ctx),
             None => Ok(()),
         }
     }

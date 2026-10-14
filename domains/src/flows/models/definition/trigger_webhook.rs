@@ -3,6 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::invalid;
+use crate::core::models::{AppContext, AppError};
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct TriggerWebhook {
@@ -11,12 +14,12 @@ pub struct TriggerWebhook {
 }
 
 impl TriggerWebhook {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
         if self.name.is_empty() {
-            return Err("triggers.webhook.name is empty".to_string());
+            return Err(invalid(ctx, "triggers.webhook.name is empty"));
         }
         if self.token.is_empty() {
-            return Err("triggers.webhook.token is empty".to_string());
+            return Err(invalid(ctx, "triggers.webhook.token is empty"));
         }
         Ok(())
     }
