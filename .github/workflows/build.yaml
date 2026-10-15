@@ -5,8 +5,12 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
   packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  CHART_REGISTRY: oci://ghcr.io/${{ github.repository_owner }}/charts
 
 jobs:
   build:
@@ -25,5 +29,37 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           platforms: linux/amd64,linux/arm64
-          tags: ghcr.io/pndrik/beaver:${{ github.ref_name }}
+          tags: ${{ env.IMAGE }}:${{ github.ref_name }}
           push: true
+
+      - name: Package and Push Chart
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+          helm package chart --version ${{ github.ref_name }} --app-version ${{ github.ref_name }}
+          helm push beaver-${{ github.ref_name }}.tgz ${{ env.CHART_REGISTRY }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          NOTES=$(cat <<EOF
+          > ⚠️ Experimental build, use at your own risk.
+
+          ### What's available
+
+          - 🐳 **Docker image** (multi-arch amd64/arm64): \`${{ env.IMAGE }}:${{ github.ref_name }}\`
+          - ⛵ **Helm chart** \`${{ github.ref_name }}\`: \`${CHART_REGISTRY}/beaver\` (also attached as \`beaver-${{ github.ref_name }}.tgz\`)
+
+          ### Install
+
+          \`\`\`bash
+          helm install beaver ${CHART_REGISTRY}/beaver --version ${{ github.ref_name }} -f my-values.yaml
+          \`\`\`
+
+          See [\`chart/values.example.yaml\`](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/chart/values.example.yaml) for a starting point.
+          EOF
+          )
+          gh release create "${{ github.ref_name }}" "beaver-${{ github.ref_name }}.tgz" \
+            --title "${{ github.ref_name }}" \
+            --notes "$NOTES"

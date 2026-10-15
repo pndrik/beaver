@@ -21,7 +21,7 @@ spec:
       securityContext: {{ toYaml .Values.webhook.securityContext | nindent 8 }}
       containers:
         - name: beaver
-          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
           command: ["/webhook"]
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
