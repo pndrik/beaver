@@ -8,7 +8,7 @@ use crate::{
     core::models::{AppContext, AppError},
     inference::{
         Inference,
-        models::{Conversation, Model, Options},
+        models::{Conversation, Message, Model},
         traits::InferenceProvider,
     },
     tools::{Tools, use_cases::subagent},
@@ -16,7 +16,7 @@ use crate::{
 
 const MAX_INFERENCE_TOOL_ITERATIONS: usize = 100;
 
-async fn find_inference_provider(
+pub(crate) async fn find_inference_provider(
     ctx: &AppContext,
     providers: &[Arc<dyn InferenceProvider + Send + Sync>],
     model: &Model,
@@ -47,26 +47,35 @@ impl Inference {
             let inference_provider = find_inference_provider(
                 ctx,
                 &self.inference_providers,
-                &conversation.agent.model(),
+                conversation.agent().model(),
             )
             .await?;
-            let options = Options::default();
+            let options = conversation.agent().inference.options.clone();
 
             for _ in 0..MAX_INFERENCE_TOOL_ITERATIONS {
-                let tool_calls = inference_provider
+                self.compress(ctx, conversation).await?;
+                inference_provider
                     .infer(ctx, &options, conversation)
                     .await?;
 
-                let Some(latest_message) = conversation.get_latest_message() else {
-                    break;
+                let Some(agent_message) =
+                    conversation.last().and_then(|message| message.as_agent())
+                else {
+                    return Err(app_error!(
+                        Internal,
+                        "invalid_response_format",
+                        "Latest message is not from the agent.",
+                        ctx.clone()
+                    ));
                 };
 
+                let tool_calls = agent_message.tool_calls.clone();
                 if tool_calls.is_empty() {
-                    if !latest_message.is_assistant() {
+                    if agent_message.content.is_none() {
                         return Err(app_error!(
                             Internal,
                             "invalid_response_format",
-                            "Latest message is not from the assistant and there were no tool calls.",
+                            "The agent message has no content and there were no tool calls.",
                             ctx.clone()
                         ));
                     }
@@ -92,10 +101,16 @@ impl Inference {
                     ),
                 )
                 .await;
-            conversation.add_tool_message(format!(
-                "Error: \nMaximum number of tool iterations ({}) exceeded",
-                MAX_INFERENCE_TOOL_ITERATIONS
-            ));
+            conversation.insert_message(
+                Message::tool(
+                    format!(
+                        "Error: \nMaximum number of tool iterations ({}) exceeded",
+                        MAX_INFERENCE_TOOL_ITERATIONS
+                    ),
+                    conversation.agent(),
+                ),
+                None,
+            );
 
             Ok(false)
         })

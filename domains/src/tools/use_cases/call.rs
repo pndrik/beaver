@@ -6,7 +6,10 @@ use std::sync::Arc;
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::{Inference, models::Conversation},
+    inference::{
+        Inference,
+        models::{Conversation, Message},
+    },
     tools::{
         Tools,
         models::{Call, Tool, ToolPermission, ToolsConfiguration},
@@ -22,13 +25,19 @@ async fn add_tool_message_to_conversation(
     response_type: &str,
     response: &str,
 ) -> Result<(), AppError> {
-    conversation.add_tool_message(format!(
-        "Name: {}\nArguments: {}\n{}: \n{}",
-        call.name,
-        call.arguments_as_json(),
-        response_type,
-        response
-    ));
+    conversation.insert_message(
+        Message::tool(
+            format!(
+                "Name: {}\nArguments: {}\n{}: \n{}",
+                call.name,
+                call.arguments_as_json(),
+                response_type,
+                response
+            ),
+            conversation.agent(),
+        ),
+        None,
+    );
 
     Ok(())
 }
@@ -110,35 +119,37 @@ impl Tools {
                 ctx,
                 &format!(
                     "Agent '{}' is calling tool '{}'",
-                    conversation.agent.metadata.name, call.name
+                    conversation.agent().metadata.name,
+                    call.name
                 ),
             )
             .await;
 
-        let permissions = match get_permission_for_tool(ctx, &conversation.agent.tools, &call.name)
-        {
-            Ok(p) => p,
-            Err(err) => {
-                ctx.logger
-                    .warn(
+        let permissions =
+            match get_permission_for_tool(ctx, &conversation.agent().tools, &call.name) {
+                Ok(p) => p,
+                Err(err) => {
+                    ctx.logger
+                        .warn(
+                            ctx,
+                            &format!(
+                                "Agent '{}' has no permission to access tool '{}'.",
+                                conversation.agent().metadata.name,
+                                call.name
+                            ),
+                        )
+                        .await;
+                    add_tool_message_to_conversation(
                         ctx,
-                        &format!(
-                            "Agent '{}' has no permission to access tool '{}'.",
-                            conversation.agent.metadata.name, call.name
-                        ),
+                        conversation,
+                        call,
+                        "Error",
+                        &err.internal_message,
                     )
-                    .await;
-                add_tool_message_to_conversation(
-                    ctx,
-                    conversation,
-                    call,
-                    "Error",
-                    &err.internal_message,
-                )
-                .await?;
-                return Ok(());
-            }
-        };
+                    .await?;
+                    return Ok(());
+                }
+            };
 
         if let Some((provider, tool)) = self.find_provider(ctx, &call.name).await {
             if !call.validate_arguments(tool.schema) {

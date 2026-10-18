@@ -8,7 +8,10 @@ use super::leave;
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::{Inference, models::Conversation},
+    inference::{
+        Inference,
+        models::{Conversation, Message, Usage},
+    },
     tools::{
         Tools,
         models::{Call, Schema, SchemaField, SchemaFieldType, ToolPermission},
@@ -99,14 +102,18 @@ impl SubagentTool for Invoke {
             ));
         }
 
-        conversation.add_assistant_message(
-            conversation.agent.metadata.name.clone(),
-            conversation.agent.metadata.display_name.clone(),
-            arguments.prompt.clone(),
+        conversation.insert_message(
+            Message::agent(
+                conversation.agent(),
+                Some(arguments.prompt.clone()),
+                vec![],
+                conversation.usage().unwrap_or_default(),
+            ),
+            None,
         );
 
         let subagent_tools = conversation
-            .tools
+            .tools()
             .iter()
             .filter(|s| s.name == subagent::LIST || s.name == subagent::INVOKE)
             .cloned()
@@ -119,20 +126,37 @@ impl SubagentTool for Invoke {
         let mut subagent_conversation = inference
             .new_conversation(ctx, &arguments.name, tools, &chroot)
             .await?;
-        subagent_conversation.add_user_message(arguments.prompt);
-        conversation.add_tool_message(format!(
-            "To end the conversation with the subagent '{}' you must call the '{}' tool.",
-            subagent_conversation.agent.metadata.display_name,
-            subagent::LEAVE
-        ));
+        subagent_conversation.insert_message(
+            Message::user(arguments.prompt, subagent_conversation.agent()),
+            None,
+        );
+        conversation.insert_message(
+            Message::tool(
+                format!(
+                    "To end the conversation with the subagent '{}' you must call the '{}' tool.",
+                    subagent_conversation.agent().metadata.display_name,
+                    subagent::LEAVE
+                ),
+                conversation.agent(),
+            ),
+            None,
+        );
 
         for _ in 0..MAX_SUBAGENT_ITERATIONS {
             inference
                 .infer(ctx, &mut subagent_conversation, tools)
                 .await?;
 
-            let subagent_reply = subagent_conversation.get_latest_message().unwrap();
-            conversation.add_message(subagent_reply.clone());
+            let subagent_reply = match subagent_conversation.last() {
+                Some(message) => message.clone(),
+                None => Message::agent(
+                    subagent_conversation.agent(),
+                    Some("Subagent did not return a response.".to_string()),
+                    vec![],
+                    Usage::default(),
+                ),
+            };
+            conversation.insert_message(subagent_reply, None);
 
             let left = inference
                 .infer_until_leave(ctx, conversation, tools)
@@ -143,15 +167,29 @@ impl SubagentTool for Invoke {
                     conversation.add_tool(tool);
                 }
 
-                conversation.add_tool_message(format!(
-                    "The subagent '{}' has left the conversation.",
-                    arguments.name
-                ));
+                conversation.insert_message(
+                    Message::tool(
+                        format!(
+                            "The subagent '{}' has left the conversation.",
+                            arguments.name
+                        ),
+                        conversation.agent(),
+                    ),
+                    None,
+                );
                 break;
             }
 
-            let latest_message = conversation.get_latest_message_content().unwrap();
-            subagent_conversation.add_user_message(latest_message.clone());
+            let latest_message = conversation
+                .last()
+                .and_then(|message| message.as_agent())
+                .and_then(|message| message.content.clone())
+                .unwrap_or("The parent agent did not provide a message".to_string());
+
+            subagent_conversation.insert_message(
+                Message::user(latest_message.clone(), subagent_conversation.agent()),
+                None,
+            );
         }
 
         Ok(())

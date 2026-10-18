@@ -62,6 +62,24 @@ macro_rules! models {
                 !self.rejects_sampling()
             }
 
+            /// Models without effort support get a fixed thinking budget, which
+            /// counts towards their max tokens.
+            pub fn uses_thinking_budget(&self) -> bool {
+                matches!(
+                    self,
+                    Model::ClaudeOpus4_1
+                        | Model::ClaudeSonnet4_5
+                        | Model::ClaudeSonnet4
+                        | Model::ClaudeHaiku4_5
+                        | Model::ClaudeHaiku3_5
+                        | Model::Qwen3_8Flash
+                        | Model::Qwen3_7Max
+                        | Model::Qwen3_7Plus
+                        | Model::Qwen3_6Plus
+                        | Model::Qwen3_5Plus
+                )
+            }
+
             pub fn supports_reasoning_effort(&self) -> bool {
                 matches!(
                     self.adapter(),

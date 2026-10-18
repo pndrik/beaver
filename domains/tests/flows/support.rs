@@ -12,7 +12,7 @@ use app_domains::{
     flows::{Flows, models::Definition},
     inference::{
         Inference,
-        models::{Agent, AgentCacheLevel, AgentInference, Model, Options},
+        models::{Agent, AgentCacheLevel, AgentInference, Compression, Model, Options},
     },
     tools::Tools,
 };
@@ -44,6 +44,7 @@ fn agent(name: &str) -> Agent {
             model: Model::ClaudeOpus5,
             caching: AgentCacheLevel::default(),
             options: Options::default(),
+            compression: Compression::default(),
         },
     )
 }

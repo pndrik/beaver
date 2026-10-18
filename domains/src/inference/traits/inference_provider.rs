@@ -5,16 +5,16 @@ use async_trait::async_trait;
 
 use crate::core::models::{AppContext, AppError};
 use crate::inference::models::{Conversation, Model, Options};
-use crate::tools::models::Call as SkillCall;
 
 #[async_trait]
 pub trait InferenceProvider {
+    /// Appends the response as an agent message, including its tool calls.
     async fn infer(
         &self,
         ctx: &AppContext,
         options: &Options,
         conversation: &mut Conversation,
-    ) -> Result<Vec<SkillCall>, AppError>;
+    ) -> Result<(), AppError>;
     async fn supported_models(&self, ctx: &AppContext) -> Result<Vec<Model>, AppError>;
     async fn supports_model(&self, ctx: &AppContext, model: &Model) -> Result<bool, AppError>;
 }

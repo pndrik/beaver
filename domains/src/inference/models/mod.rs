@@ -4,6 +4,9 @@
 mod agent;
 pub use agent::*;
 
+mod compression;
+pub use compression::*;
+
 mod conversation;
 pub use conversation::*;
 
@@ -15,3 +18,6 @@ pub use model::*;
 
 mod options;
 pub use options::*;
+
+mod usage;
+pub use usage::*;

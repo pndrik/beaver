@@ -17,11 +17,11 @@ impl GenAi {
         ctx: &AppContext,
         conversation: &Conversation,
     ) -> Result<Vec<Tool>, AppError> {
-        let caching = &conversation.agent.inference.caching;
+        let caching = &conversation.agent().inference.caching;
         let cache_control =
             convert_cache_control(caching.system.as_ref().unwrap_or(&caching.default));
 
-        let mut tools_sorted = conversation.tools.clone();
+        let mut tools_sorted = conversation.tools().to_vec();
         tools_sorted.sort_by(|a, b| a.name.cmp(&b.name));
 
         let mut tools = tools_sorted

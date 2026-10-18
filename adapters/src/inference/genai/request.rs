@@ -6,46 +6,47 @@ use genai::chat::{ChatMessage, ChatRequest};
 use super::{GenAi, utils::convert_cache_control};
 use app_domains::inference::models::{Conversation, Message, MessageType};
 
-fn new_message(conversation: &Conversation, internal_message: &Message) -> ChatMessage {
-    match internal_message.message_type {
-        MessageType::System => ChatMessage::system(internal_message.content.clone()),
-        MessageType::Assistant => {
-            if internal_message.agent_name != conversation.agent.metadata.name {
-                ChatMessage::user(format!(
-                    "[subagent/{}]: {}",
-                    internal_message.agent_name, internal_message.content
-                ))
-            } else {
-                ChatMessage::assistant(internal_message.content.clone())
-            }
+fn new_message(conversation: &Conversation, internal_message: &Message) -> Option<ChatMessage> {
+    let content = internal_message.content()?;
+    let name = internal_message.name();
+    let message = match internal_message.message_type() {
+        MessageType::Agent if name != conversation.agent().metadata.name => ChatMessage::user(
+            format!("<subagent name=\"{}\">\n{}\n</subagent>", name, content),
+        ),
+        MessageType::Agent => ChatMessage::assistant(content),
+        MessageType::System => ChatMessage::system(content),
+        MessageType::User => ChatMessage::user(content),
+        // Many models either don't support tool messages or treat them not in a way we want them to treat them.
+        MessageType::Tool => {
+            ChatMessage::user(format!("<tool_result>\n{}\n</tool_result>", content))
         }
-        MessageType::User => ChatMessage::user(internal_message.content.clone()),
-        MessageType::Tool => ChatMessage::user(
-            "--- TOOL/SKILL RESULT ---\n".to_string()
-                + &internal_message.content
-                + "\n--- END TOOL/SKILL RESULT ---",
-        ), // Many models either don't support tool messages or treat them not in a way we want them to treat them.
-    }
+        MessageType::Summary => ChatMessage::user(format!(
+            "<conversation_summary>\n{}\n</conversation_summary>",
+            content
+        )),
+    };
+
+    Some(message)
 }
 
 impl GenAi {
     pub(super) fn get_chat_request(&self, conversation: &Conversation) -> ChatRequest {
         let mut chat_req = ChatRequest::default();
 
-        let prompt = conversation.prompt();
-        let mut system_message = new_message(conversation, prompt);
-        if let Some(cache_level) = convert_cache_control(&prompt.cache_level) {
+        let system_prompt = conversation.system_prompt();
+        let mut system_message = ChatMessage::system(system_prompt.content().unwrap_or_default());
+        if let Some(cache_level) = convert_cache_control(system_prompt.cache_level()) {
             system_message.options = Some(cache_level.into());
         }
 
         let mut messages: Vec<ChatMessage> = conversation
-            .messages()
+            .context()
             .iter()
-            .map(|m| new_message(conversation, m))
+            .filter_map(|m| new_message(conversation, m))
             .collect();
 
         if let Some(cache_level) =
-            convert_cache_control(&conversation.agent.inference.caching.default)
+            convert_cache_control(&conversation.agent().inference.caching.default)
             && let Some(last) = messages.last_mut()
         {
             last.options = Some(cache_level.into());

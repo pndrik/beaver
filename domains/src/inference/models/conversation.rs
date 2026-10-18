@@ -3,11 +3,10 @@
 
 use std::path::Path;
 
-use super::Message;
+use super::{Agent, Message, Usage};
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::models::Agent,
     tools::models::Tool,
 };
 
@@ -16,8 +15,8 @@ type Callback = Box<dyn Fn(Message) + Send + Sync>;
 pub struct Conversation {
     system_prompt: Message,
 
-    pub agent: Agent,
-    pub tools: Vec<Tool>,
+    agent: Agent,
+    tools: Vec<Tool>,
 
     chroot: String,
     messages: Vec<Message>,
@@ -61,6 +60,39 @@ impl Conversation {
         Ok(conversation)
     }
 
+    /*
+     * System prompt
+     */
+    pub fn system_prompt(&self) -> &Message {
+        &self.system_prompt
+    }
+
+    /*
+     * Agent
+     */
+    pub fn agent(&self) -> &Agent {
+        &self.agent
+    }
+
+    /*
+     * Tools
+     */
+    pub fn tools(&self) -> &[Tool] {
+        &self.tools
+    }
+
+    pub fn add_tool(&mut self, tool: Tool) {
+        self.remove_tool(&tool.name);
+        self.tools.push(tool);
+    }
+
+    pub fn remove_tool(&mut self, tool_name: &str) {
+        self.tools.retain(|tool| tool.name != tool_name);
+    }
+
+    /*
+     * Chroot
+     */
     pub fn chroot(&self) -> &str {
         &self.chroot
     }
@@ -111,68 +143,87 @@ impl Conversation {
         Ok(canonicalized.to_string_lossy().to_string())
     }
 
-    pub fn prompt(&self) -> &Message {
-        &self.system_prompt
+    /*
+     * Messages
+     */
+    pub fn messages(&self) -> &[Message] {
+        &self.messages
     }
 
-    pub fn add_message(&mut self, message: Message) {
-        self.messages.push(message.clone());
+    pub fn last(&self) -> Option<&Message> {
+        self.messages.last()
+    }
+
+    pub fn insert_message(&mut self, message: Message, position: Option<i64>) {
+        let len = self.messages.len() as i64;
+        let index = match position.unwrap_or(-1) {
+            position if position < 0 => len + 1 + position,
+            position => position,
+        };
+        self.messages
+            .insert(index.clamp(0, len) as usize, message.clone());
 
         for subscriber in self.subscribers.iter() {
             subscriber(message.clone());
         }
     }
 
-    pub fn add_assistant_message(&mut self, name: String, display_name: String, content: String) {
-        self.add_message(Message::assistant(
-            name,
-            display_name,
-            content,
-            &self.agent.inference.caching.default,
-        ));
-    }
-    pub fn add_user_message(&mut self, content: String) {
-        self.add_message(Message::user(
-            content,
-            &self.agent.inference.caching.default,
-        ));
-    }
-    pub fn add_tool_message(&mut self, content: String) {
-        self.add_message(Message::tool(
-            content,
-            &self.agent.inference.caching.default,
-        ));
+    /// The messages sent to the model: from the latest summary onward, or all.
+    pub fn context(&self) -> &[Message] {
+        let start = self
+            .messages
+            .iter()
+            .rposition(Message::is_summary)
+            .unwrap_or(0);
+        &self.messages[start..]
     }
 
-    pub fn messages(&self) -> &[Message] {
-        &self.messages
+    /// The usage the provider last reported for this agent since the latest
+    /// summary, `None` if it has not responded since. Replies of subagents are
+    /// skipped, they report the subagent's context.
+    pub fn usage(&self) -> Option<Usage> {
+        self.context()
+            .iter()
+            .rev()
+            .filter_map(Message::as_agent)
+            .find(|message| message.name == self.agent.metadata.name)
+            .map(|message| message.usage)
     }
 
-    pub fn get_latest_message(&self) -> Option<&Message> {
-        self.messages.last()
+    /// The context size the provider last reported for this agent.
+    pub fn tokens(&self) -> u64 {
+        self.usage().map_or(0, |usage| usage.total())
     }
-    pub fn get_latest_message_content(&self) -> Option<String> {
-        self.get_latest_message().map(|m| m.content.clone())
-    }
-    pub fn append_to_latest_message(&mut self, content: String) {
-        if let Some(last_message) = self.messages.last_mut() {
-            last_message.content.push_str(&content);
+
+    pub fn needs_compression(&self) -> bool {
+        let compression = &self.agent.inference.compression;
+        if !compression.enabled {
+            return false;
         }
-    }
-    pub fn remove_latest_message(&mut self) {
-        self.messages.pop();
+
+        let messages = self
+            .context()
+            .iter()
+            .filter(|message| !message.is_summary())
+            .count() as u64;
+
+        // Fail safe if the conversation is too short to compress.
+        if messages < 2 {
+            return false;
+        }
+
+        compression
+            .tokens
+            .is_some_and(|max_tokens| self.tokens() >= max_tokens)
+            || compression
+                .messages
+                .is_some_and(|max_messages| messages >= max_messages)
     }
 
+    /*
+     * Subscribers
+     */
     pub fn subscribe(&mut self, callback: Callback) {
         self.subscribers.push(callback);
-    }
-
-    pub fn add_tool(&mut self, tool: Tool) {
-        self.remove_tool(&tool.name);
-        self.tools.push(tool);
-    }
-
-    pub fn remove_tool(&mut self, tool_name: &str) {
-        self.tools.retain(|tool| tool.name != tool_name);
     }
 }

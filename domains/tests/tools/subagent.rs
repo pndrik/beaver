@@ -10,7 +10,10 @@ use app_domains::{
     core::models::AppContext,
     inference::{
         Inference,
-        models::{Agent, AgentCacheLevel, AgentInference, Model, Options},
+        models::{
+            Agent, AgentCacheLevel, AgentInference, Compression, Conversation, Message, Model,
+            Options,
+        },
     },
     tools::{
         Tools,
@@ -28,14 +31,24 @@ fn agent(name: &str, permissions: Vec<ToolPermission>) -> Agent {
             model: Model::ClaudeOpus5,
             caching: AgentCacheLevel::default(),
             options: Options::default(),
+            compression: Compression::default(),
         },
     );
     agent.tools.permissions = permissions;
     agent
 }
 
-#[tokio::test]
-async fn subagent_runs_in_the_chroot_of_its_parent() {
+struct Fixture {
+    ctx: AppContext,
+    scripted: Arc<Scripted>,
+    inference: Inference,
+    tools: Tools,
+    conversation: Conversation,
+    _chroot: tempfile::TempDir,
+}
+
+/// A conversation with `parent`, which may invoke the subagent `helper`.
+async fn fixture() -> Fixture {
     let chroot = tempfile::tempdir().unwrap();
     let ctx = AppContext::new(
         "test".to_string(),
@@ -56,20 +69,43 @@ async fn subagent_runs_in_the_chroot_of_its_parent() {
     )
     .unwrap();
     let tools = Tools::new(vec![]).unwrap();
-
-    let mut conversation = inference
+    let conversation = inference
         .new_conversation(&ctx, "parent", &tools, &chroot.path().to_string_lossy())
         .await
         .unwrap();
-    let call = Call::new(
+
+    Fixture {
+        ctx,
+        scripted,
+        inference,
+        tools,
+        conversation,
+        _chroot: chroot,
+    }
+}
+
+fn invoke(prompt: &str) -> Call {
+    Call::new(
         "subagent_invoke".to_string(),
         HashMap::from([
             ("name".to_string(), CallValue::String("helper".to_string())),
-            ("prompt".to_string(), CallValue::String("hi".to_string())),
+            ("prompt".to_string(), CallValue::String(prompt.to_string())),
         ]),
-    );
+    )
+}
+
+#[tokio::test]
+async fn subagent_runs_in_the_chroot_of_its_parent() {
+    let Fixture {
+        ctx,
+        scripted,
+        inference,
+        tools,
+        mut conversation,
+        _chroot,
+    } = fixture().await;
     tools
-        .call(&ctx, &mut conversation, &inference, &call)
+        .call(&ctx, &mut conversation, &inference, &invoke("hi"))
         .await
         .unwrap();
 
@@ -78,4 +114,49 @@ async fn subagent_runs_in_the_chroot_of_its_parent() {
     assert_eq!(helper.prompt, "hi");
     assert_eq!(helper.chroot, conversation.chroot());
     assert!(calls.iter().all(|c| c.chroot == conversation.chroot()));
+}
+
+#[tokio::test]
+async fn subagent_messages_carry_usage() {
+    let Fixture {
+        ctx,
+        inference,
+        tools,
+        mut conversation,
+        _chroot,
+        ..
+    } = fixture().await;
+    conversation.insert_message(
+        Message::user("start".to_string(), conversation.agent()),
+        None,
+    );
+    inference
+        .infer(&ctx, &mut conversation, &tools)
+        .await
+        .unwrap();
+    let parent_usage = conversation.usage().unwrap();
+
+    tools
+        .call(&ctx, &mut conversation, &inference, &invoke("hi"))
+        .await
+        .unwrap();
+
+    let agent_messages: Vec<_> = conversation
+        .messages()
+        .iter()
+        .filter_map(|message| message.as_agent())
+        .collect();
+    let prompt = agent_messages
+        .iter()
+        .find(|message| message.content.as_deref() == Some("hi"))
+        .unwrap();
+    assert_eq!(prompt.name, "parent");
+    assert_eq!(prompt.usage, parent_usage);
+
+    let reply = agent_messages
+        .iter()
+        .find(|message| message.name == "helper")
+        .unwrap();
+    assert!(reply.usage.input > 0);
+    assert!(reply.usage.output > 0);
 }

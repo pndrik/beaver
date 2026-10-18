@@ -11,7 +11,6 @@ use app_domains::{
         models::{Conversation, Model, Options},
         traits::InferenceProvider,
     },
-    tools::models::Call as SkillCall,
 };
 
 mod helpers;
@@ -42,7 +41,7 @@ impl InferenceProvider for Anthropic {
         ctx: &AppContext,
         options: &Options,
         conversation: &mut Conversation,
-    ) -> Result<Vec<SkillCall>, AppError> {
+    ) -> Result<(), AppError> {
         self.genai.infer(ctx, options, conversation).await
     }
 

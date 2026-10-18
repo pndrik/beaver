@@ -6,7 +6,10 @@ use async_trait::async_trait;
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
-    inference::{Inference, models::Conversation},
+    inference::{
+        Inference,
+        models::{Conversation, Message},
+    },
     tools::{
         Tools,
         models::{Call, Schema, ToolPermission},
@@ -55,7 +58,7 @@ impl SubagentTool for List {
             .list(ctx)
             .await?
             .iter()
-            .filter(|a| a.metadata.name != conversation.agent.metadata.name)
+            .filter(|a| a.metadata.name != conversation.agent().metadata.name)
             .filter(|a| permissions.scopes.contains(&a.metadata.name))
             .map(|a| {
                 format!(
@@ -64,7 +67,13 @@ impl SubagentTool for List {
                 )
             })
             .collect::<Vec<String>>();
-        conversation.add_tool_message(format!("Available subagents:\n{}", subagents.join("\n\n")));
+        conversation.insert_message(
+            Message::tool(
+                format!("Available subagents:\n{}", subagents.join("\n\n")),
+                conversation.agent(),
+            ),
+            None,
+        );
 
         Ok(())
     }

@@ -9,6 +9,14 @@ use app_domains::{
     inference::models::{Model, ModelAdapter, Options, ReasoningEffort},
 };
 
+fn anthropic_thinking_budget(reasoning_effort: &ReasoningEffort) -> u64 {
+    match reasoning_effort {
+        ReasoningEffort::Low => 1024,
+        ReasoningEffort::Medium => 8000,
+        ReasoningEffort::High | ReasoningEffort::Max => 24000,
+    }
+}
+
 impl GenAi {
     pub(super) fn get_options(
         &self,
@@ -16,9 +24,17 @@ impl GenAi {
         model: &Model,
         options: &Options,
     ) -> Result<ChatOptions, AppError> {
+        let mut max_tokens = options.max_tokens;
+        if model.uses_thinking_budget() {
+            let budget = anthropic_thinking_budget(&options.reasoning_effort);
+            if max_tokens <= budget {
+                max_tokens += budget;
+            }
+        }
+
         let mut o = ChatOptions::default()
             .with_normalize_reasoning_content(true)
-            .with_max_tokens(options.max_tokens.min(u32::MAX as u64) as u32);
+            .with_max_tokens(max_tokens.min(u32::MAX as u64) as u32);
 
         if model.supports_temperature() && options.temperature >= 0.0 {
             o = o.with_temperature(options.temperature);

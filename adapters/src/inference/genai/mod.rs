@@ -7,10 +7,9 @@ use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
     inference::{
-        models::{Conversation, Model, ModelAdapter, Options},
+        models::{Conversation, Message, Model, ModelAdapter, Options, Usage},
         traits::InferenceProvider,
     },
-    tools::models::Call as SkillCall,
 };
 
 mod client;
@@ -18,6 +17,9 @@ mod options;
 mod request;
 mod tools;
 mod utils;
+
+#[cfg(test)]
+mod tests;
 
 pub struct GenAi {
     configuration_key_endpoint: String,
@@ -44,16 +46,16 @@ impl InferenceProvider for GenAi {
         ctx: &AppContext,
         options: &Options,
         conversation: &mut Conversation,
-    ) -> Result<Vec<SkillCall>, AppError> {
+    ) -> Result<(), AppError> {
         let client = self.get_client(ctx).await?;
-        let chat_options = self.get_options(ctx, &conversation.agent.model(), options)?;
+        let chat_options = self.get_options(ctx, conversation.agent().model(), options)?;
         let chat_request = self
             .get_chat_request(conversation)
             .with_tools(self.get_tools(ctx, conversation)?);
 
         let chat_response = client
             .exec_chat(
-                &conversation.agent.model().id(),
+                conversation.agent().model().id(),
                 chat_request,
                 Some(&chat_options),
             )
@@ -80,26 +82,30 @@ impl InferenceProvider for GenAi {
             )
             .await;
 
-        if let Some(mut assistant_answer) = chat_response.first_text() {
+        let usage = Usage {
+            input: usage.prompt_tokens.unwrap_or(0).max(0) as u64,
+            output: usage.completion_tokens.unwrap_or(0).max(0) as u64,
+        };
+
+        let content = chat_response.first_text().map(|mut text| {
             // OpenAI response does not respect stop support, so we need to manually truncate the response if stop sequences are provided
-            if conversation.agent.model().adapter() == ModelAdapter::OpenAIResp
-                && options.stop_sequences.len() > 0
-            {
+            if conversation.agent().model().adapter() == ModelAdapter::OpenAIResp {
                 for stop_sequence in &options.stop_sequences {
-                    if let Some(index) = assistant_answer.find(stop_sequence) {
-                        assistant_answer = &assistant_answer[..index];
+                    if let Some(index) = text.find(stop_sequence) {
+                        text = &text[..index];
                     }
                 }
             }
+            text.to_string()
+        });
 
-            conversation.add_assistant_message(
-                conversation.agent.metadata.name.clone(),
-                conversation.agent.metadata.display_name.clone(),
-                assistant_answer.to_string(),
-            );
-        };
+        let tool_calls = self.tool_calls_to_tool_calls(ctx, chat_response.into_tool_calls())?;
+        conversation.insert_message(
+            Message::agent(conversation.agent(), content, tool_calls, usage),
+            None,
+        );
 
-        self.tool_calls_to_tool_calls(ctx, chat_response.into_tool_calls())
+        Ok(())
     }
 
     async fn supported_models(&self, ctx: &AppContext) -> Result<Vec<Model>, AppError> {

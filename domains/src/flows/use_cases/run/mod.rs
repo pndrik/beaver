@@ -1,9 +1,8 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::{collections::HashMap, path::PathBuf};
-
 use serde_json::{Map, Value};
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
     core::models::{AppContext, AppError},
@@ -11,7 +10,10 @@ use crate::{
         Flows,
         models::{ArgumentsAgent, Definition},
     },
-    inference::{Inference, models::Conversation},
+    inference::{
+        Inference,
+        models::{Conversation, Message},
+    },
     tools::Tools,
 };
 
@@ -91,7 +93,7 @@ impl Flows {
         tools: &Tools,
     ) -> Result<String, AppError> {
         let conversation = &mut context.conversation;
-        let agent = conversation.agent.metadata.name.clone();
+        let agent = conversation.agent().metadata.name.clone();
 
         let prompt = self
             .template_engine
@@ -101,15 +103,13 @@ impl Flows {
             .trace(ctx, &format!("[prompt → {}]: {}", agent, prompt))
             .await;
 
-        conversation.add_user_message(prompt);
+        conversation.insert_message(Message::user(prompt, conversation.agent()), None);
         inference.infer(ctx, conversation, tools).await?;
 
         let output = conversation
-            .messages()
-            .iter()
-            .rev()
-            .find(|message| message.is_assistant())
-            .map(|message| message.content.clone())
+            .last()
+            .and_then(|message| message.as_agent())
+            .and_then(|message| message.content.clone())
             .unwrap_or_default();
         ctx.logger
             .trace(ctx, &format!("[{}]: {}", agent, output))

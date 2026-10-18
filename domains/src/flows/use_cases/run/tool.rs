@@ -10,6 +10,7 @@ use crate::{
     app_error,
     core::models::{AppContext, AppError},
     flows::{Flows, models::ArgumentsTool},
+    inference::models::Message,
     tools::{
         Tools,
         models::{Call, CallValue, ToolPermission},
@@ -53,12 +54,18 @@ impl Flows {
             .execute_direct(ctx, &mut context.conversation, permissions, &call)
             .await?;
 
-        context.conversation.add_tool_message(format!(
-            "Name: {}\nArguments: {}\nResult: \n{}",
-            call.name,
-            call.arguments_as_json(),
-            output
-        ));
+        context.conversation.insert_message(
+            Message::tool(
+                format!(
+                    "Name: {}\nArguments: {}\nResult: \n{}",
+                    call.name,
+                    call.arguments_as_json(),
+                    output
+                ),
+                context.conversation.agent(),
+            ),
+            None,
+        );
 
         Ok(output)
     }

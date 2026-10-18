@@ -1,9 +1,8 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::{future::Future, pin::Pin};
-
 use serde_json::{Map, Value, json};
+use std::{future::Future, pin::Pin};
 
 use crate::{
     core::{
@@ -11,7 +10,7 @@ use crate::{
         traits::TemplateEngine,
     },
     flows::models::Definition,
-    inference::models::{Message, MessageType},
+    inference::models::Message,
 };
 
 /// The values templates can read: `Body`, `Query`, `Ctx`, `Flow` and the
@@ -32,24 +31,18 @@ pub(super) fn template_values(
     })
 }
 
-fn message_type(message_type: &MessageType) -> &'static str {
-    match message_type {
-        MessageType::System => "system",
-        MessageType::Assistant => "assistant",
-        MessageType::User => "user",
-        MessageType::Tool => "tool",
-    }
-}
-
 pub(super) fn messages(messages: &[Message]) -> Value {
     Value::Array(
         messages
             .iter()
             .map(|message| {
+                let agent_message = message.as_agent();
                 json!({
-                    "type": message_type(&message.message_type),
-                    "agent": message.agent_name,
-                    "content": message.content,
+                    "type": message.message_type().as_string(),
+                    "agent": message.name(),
+                    "content": message.content(),
+                    "tool_calls": agent_message.map_or(&[][..], |m| &m.tool_calls),
+                    "usage": agent_message.map(|m| m.usage),
                 })
             })
             .collect(),

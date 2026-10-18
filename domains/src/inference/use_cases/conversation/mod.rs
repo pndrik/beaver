@@ -30,13 +30,9 @@ impl Inference {
             .cloned()
             .collect::<Vec<Tool>>();
 
-        let system_caching = match agent.inference.caching.system.clone() {
-            Some(caching) => caching,
-            None => agent.inference.caching.default.clone(),
-        };
         let system_prompt = Message::system(
-            PROMPT.to_string() + "\n\n---\n# Prompt\n" + &agent.prompt,
-            &system_caching,
+            PROMPT.to_string() + "\n\n---\n# Harness\n" + &agent.prompt,
+            &agent,
         );
         Conversation::new(ctx, system_prompt, agent, tools_filtered, chroot)
     }

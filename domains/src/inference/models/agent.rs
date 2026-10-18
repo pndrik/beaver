@@ -3,11 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::Model;
-use crate::{
-    inference::models::{MessageCacheLevel, Options},
-    tools::models::ToolsConfiguration,
-};
+use super::{Compression, MessageCacheLevel, Model, Options};
+use crate::tools::models::ToolsConfiguration;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Agent {
@@ -61,6 +58,8 @@ pub struct AgentInference {
     pub caching: AgentCacheLevel,
     #[serde(default)]
     pub options: Options,
+    #[serde(default)]
+    pub compression: Compression,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]

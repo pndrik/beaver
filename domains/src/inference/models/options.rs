@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct Options {
     pub max_tokens: u64,
     pub temperature: f64,
