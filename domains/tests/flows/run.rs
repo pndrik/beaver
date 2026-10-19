@@ -1,7 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use serde_json::json;
+use serde_json::{Map, Value, json};
 use tempfile::TempDir;
 
 use app_adapters::{
@@ -22,10 +22,12 @@ struct Run {
     _global: TempDir,
 }
 
-fn flow(contexts: &str, steps: &str) -> Definition {
+/// A validated flow. `arguments`, `contexts` and `steps` are indented by
+/// four spaces.
+fn definition(name: &str, arguments: &str, contexts: &str, steps: &str) -> Definition {
     let yaml = format!(
-        "version: 1\nmetadata: {{ name: test_flow }}\nspec:\n  contexts:\n{}\n  steps:\n{}",
-        contexts, steps
+        "version: 1\nmetadata: {{ name: {} }}\nspec:\n  arguments:\n{}\n  contexts:\n{}\n  steps:\n{}",
+        name, arguments, contexts, steps
     );
     let flow: Definition = yaml_serde::from_str(&yaml).unwrap();
     let (ctx, _) = support::temp_context();
@@ -33,25 +35,47 @@ fn flow(contexts: &str, steps: &str) -> Definition {
     flow
 }
 
+/// The arguments of `flow`.
+const ARGUMENTS: &str = r#"
+    title: {}
+    mode: {}
+    n: { type: number }
+    min: { type: float }"#;
+
+fn flow(contexts: &str, steps: &str) -> Definition {
+    definition("test_flow", ARGUMENTS, contexts, steps)
+}
+
 /// A single context `c` of agent `coder`.
 const CODER: &str = "    c: { agent: coder }";
+
+fn arguments(value: Value) -> Map<String, Value> {
+    value.as_object().unwrap().clone()
+}
 
 async fn run(contexts: &str, steps: &str) -> Run {
     run_with(contexts, steps, |_| {}).await
 }
 
 async fn run_with(contexts: &str, steps: &str, setup: impl FnOnce(&TempDir)) -> Run {
-    run_full(contexts, steps, json!({"pr": {"title": "Fix bug"}}), setup).await
+    execute(
+        flow(contexts, steps),
+        json!({"title": "Fix bug", "mode": "fast"}),
+        vec![],
+        setup,
+    )
+    .await
 }
 
-async fn run_body(steps: &str, body: serde_json::Value) -> Run {
-    run_full(CODER, steps, body, |_| {}).await
+async fn run_args(steps: &str, input: Value) -> Run {
+    execute(flow(CODER, steps), input, vec![], |_| {}).await
 }
 
-async fn run_full(
-    contexts: &str,
-    steps: &str,
-    body: serde_json::Value,
+/// Runs `flow` with `input` as arguments. Flow steps can call `children`.
+async fn execute(
+    flow: Definition,
+    input: Value,
+    children: Vec<Definition>,
     setup: impl FnOnce(&TempDir),
 ) -> Run {
     let global = tempfile::tempdir().unwrap();
@@ -62,17 +86,10 @@ async fn run_full(
         inference,
         tools,
         scripted,
-    } = support::fixture(&ctx, vec![]);
+    } = support::fixture(&ctx, children);
 
     let result = flows
-        .run(
-            &ctx,
-            &flow(contexts, steps),
-            &body,
-            &json!({"mode": "fast"}),
-            &inference,
-            &tools,
-        )
+        .run(&ctx, &flow, &arguments(input), &inference, &tools)
         .await;
     let calls = scripted.calls();
     let chroot = global
@@ -113,7 +130,7 @@ async fn reused_context_keeps_the_conversation() {
 }
 
 #[tokio::test]
-async fn step_outputs_reach_later_prompts() {
+async fn contexts_reach_later_prompts() {
     let run = run(
         r#"
     t: { agent: coder }
@@ -122,29 +139,32 @@ async fn step_outputs_reach_later_prompts() {
     - name: tool_step
       context: t
       type: tool
-      arguments: { tool: echo, arguments: { text: "{{ Body.pr.title }}" } }
+      arguments: { tool: echo, arguments: { text: "{{ Arguments.title }}" } }
     - name: agent_step
       context: c
       type: agent
-      arguments: { prompt: "{{ Steps.tool_step.output }}|{{ Query.mode }}|{{ Flow.name }}" }
+      arguments: { prompt: "{{ Contexts.t.last().content }}|{{ Arguments.mode }}|{{ Flow.name }}" }
     - name: last
       context: c
       type: agent
-      arguments: { prompt: "{{ Steps.agent_step.output }}|{{ Steps.agent_step.context }}|{{ Steps.agent_step.chroot }}" }
+      arguments: { prompt: "{{ Contexts.c.last().content }}|{{ Contexts.c | length }}|{{ Contexts.c[0].type }}" }
 "#,
     )
     .await;
 
     run.result.unwrap();
-    let chroot = &run.chroot;
-    assert_eq!(
-        run.calls[0].prompt,
-        format!("echo Fix bug @ {}|fast|test_flow", chroot)
+    let first = &run.calls[0].prompt;
+    assert!(first.starts_with("Name: echo\n"), "{}", first);
+    assert!(
+        first.ends_with(&format!(
+            "Result: \necho Fix bug @ {}|fast|test_flow",
+            run.chroot
+        )),
+        "{}",
+        first
     );
-    assert_eq!(
-        run.calls[1].prompt,
-        format!("reply 1: echo Fix bug @ {}|fast|test_flow|c|.", chroot)
-    );
+    assert_eq!(run.calls[1].prompt, format!("reply 1: {}|2|user", first));
+    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
 }
 
 #[tokio::test]
@@ -152,7 +172,7 @@ async fn missing_template_field_does_not_fail_the_flow() {
     let run = run(
         CODER,
         r#"
-    - { name: only, context: c, type: agent, arguments: { prompt: "title={{ Body.pr.missing }}" } }
+    - { name: only, context: c, type: agent, arguments: { prompt: "title={{ Arguments.missing }}" } }
 "#,
     )
     .await;
@@ -163,7 +183,7 @@ async fn missing_template_field_does_not_fail_the_flow() {
         run.logger
             .messages(RecordedLevel::Warn)
             .iter()
-            .any(|w| w.contains("Body.pr.missing"))
+            .any(|w| w.contains("Arguments.missing"))
     );
 }
 
@@ -189,7 +209,7 @@ async fn tool_step_output_reaches_the_conversation_of_the_context() {
         r#"    c: { agent: coder, chroot: { path: "work", create: true } }"#,
         r#"
     - { name: tool_step, context: c, type: tool, arguments: { tool: echo, arguments: { text: "hi" } } }
-    - { name: agent_step, context: c, type: agent, arguments: { prompt: "{{ Steps.tool_step.output }}" } }
+    - { name: agent_step, context: c, type: agent, arguments: { prompt: "{{ Contexts.c.last().content }}" } }
 "#,
     )
     .await;
@@ -198,7 +218,11 @@ async fn tool_step_output_reaches_the_conversation_of_the_context() {
     let chroot = format!("{}/work", run.chroot);
     assert_eq!(run.calls[0].history, ["tool", "user"]);
     assert_eq!(run.calls[0].chroot, chroot);
-    assert_eq!(run.calls[0].prompt, format!("echo hi @ {}", chroot));
+    assert!(
+        run.calls[0]
+            .prompt
+            .ends_with(&format!("echo hi @ {}", chroot))
+    );
 }
 
 #[tokio::test]
@@ -206,8 +230,8 @@ async fn steps_run_in_their_context_chroot() {
     let run = run(
         r#"    c: { agent: coder, chroot: { path: "runs/{{ Ctx.trace_id }}", create: true } }"#,
         r#"
-    - { name: work, context: c, type: agent, arguments: { prompt: "{{ Steps.missing.output }}" } }
-    - { name: same, context: c, type: agent, arguments: { prompt: "{{ Steps.work.chroot }}" } }
+    - { name: work, context: c, type: agent, arguments: { prompt: "x" } }
+    - { name: same, context: c, type: agent, arguments: { prompt: "y" } }
 "#,
     )
     .await;
@@ -216,7 +240,6 @@ async fn steps_run_in_their_context_chroot() {
     let expected = format!("{}/runs/test-trace", run.chroot);
     assert_eq!(run.calls[0].chroot, expected);
     assert_eq!(run.calls[1].chroot, expected);
-    assert_eq!(run.calls[1].prompt, "runs/test-trace");
     assert!(std::path::Path::new(&expected).is_dir());
 }
 
@@ -241,20 +264,51 @@ async fn failing_step_stops_the_flow_and_cleans_up() {
 }
 
 #[tokio::test]
-async fn contexts_are_created_when_their_first_step_runs() {
+async fn contexts_are_created_before_the_first_step() {
     let run = run(
         r#"
-    c: { agent: coder }
+    a: { agent: coder, chroot: { path: "runs/{{ Ctx.trace_id }}", create: true, delete: true } }
     later: { agent: coder, chroot: { path: "later", create: true } }"#,
         r#"
-    - { name: broken, context: c, type: tool, arguments: { tool: fail } }
-    - { name: never, context: later, type: agent, arguments: { prompt: "x" } }
+    - { name: first, context: a, type: tool, arguments: { tool: echo, arguments: { text: "hi" } } }
+    - { name: second, context: later, type: tool, arguments: { tool: echo, arguments: { text: "{{ Contexts.later | length }}" } } }
 "#,
     )
     .await;
 
-    assert!(run.result.is_err());
-    assert!(!std::path::Path::new(&format!("{}/later", run.chroot)).exists());
+    run.result.unwrap();
+    // `later` exists before its first step, with an empty conversation.
+    assert!(std::path::Path::new(&format!("{}/later", run.chroot)).is_dir());
+    assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
+    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
+}
+
+#[tokio::test]
+async fn invalid_context_fails_before_any_step_runs_and_cleans_up() {
+    let run = run(
+        r#"
+    a: { agent: coder, chroot: { path: "runs/{{ Ctx.trace_id }}", create: true, delete: true } }
+    b: { agent: missing }"#,
+        r#"
+    - { name: first, context: a, type: tool, arguments: { tool: echo, arguments: { text: "hi" } } }
+    - { name: never, context: b, type: agent, arguments: { prompt: "x" } }
+"#,
+    )
+    .await;
+
+    let err = run.result.unwrap_err();
+    assert!(
+        err.internal_message
+            .starts_with("Flow 'test_flow' context 'b' failed"),
+        "{}",
+        err.internal_message
+    );
+    assert!(!logged(
+        &run.logger,
+        RecordedLevel::Info,
+        "step 'first' started"
+    ));
+    assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
 }
 
 #[tokio::test]
@@ -375,7 +429,7 @@ spec:
     .unwrap();
 
     let err = flows
-        .run(&ctx, &flow, &json!({}), &json!({}), &inference, &tools)
+        .run(&ctx, &flow, &Map::new(), &inference, &tools)
         .await
         .unwrap_err();
 
@@ -400,9 +454,9 @@ async fn false_when_skips_the_step() {
     - name: a
       context: c
       type: agent
-      when: [{ left: "{{ Body.pr.title }}", operator: "==", right: "Other" }]
+      when: [{ left: "{{ Arguments.title }}", operator: "==", right: "Other" }]
       arguments: { prompt: "x" }
-    - { name: b, context: c, type: agent, arguments: { prompt: "{{ Steps.a.output }}" } }
+    - { name: b, context: c, type: agent, arguments: { prompt: "{{ Contexts.c.last().content }}" } }
 "#,
     )
     .await;
@@ -420,21 +474,21 @@ async fn false_when_skips_the_step() {
 
 #[tokio::test]
 async fn when_runs_the_step_if_any_item_is_true() {
-    let run = run_body(
+    let run = run_args(
         r#"
     - name: a
       context: c
       type: agent
       when:
-        - { left: "{{ Body.pr.title }}", operator: "==", right: "Other" }
+        - { left: "{{ Arguments.title }}", operator: "==", right: "Other" }
         - all:
-          - { left: "{{ Body.pr.title }}", operator: "~=", right: "(?i)^fix" }
+          - { left: "{{ Arguments.title }}", operator: "~=", right: "(?i)^fix" }
           - any:
-            - { left: "{{ Body.n }}", operator: "<", right: "1" }
-            - { left: "{{ Body.n }}", operator: ">=", right: "{{ Body.min }}" }
+            - { left: "{{ Arguments.n }}", operator: "<", right: "1" }
+            - { left: "{{ Arguments.n }}", operator: ">=", right: "{{ Arguments.min }}" }
       arguments: { prompt: "x" }
 "#,
-        json!({"pr": {"title": "Fix bug"}, "n": 5, "min": 4.5}),
+        json!({"title": "Fix bug", "n": 5, "min": "4.5"}),
     )
     .await;
 
@@ -450,7 +504,7 @@ async fn non_numeric_comparison_fails_the_flow() {
     - name: a
       context: c
       type: agent
-      when: [{ left: "{{ Body.pr.title }}", operator: ">", right: "1" }]
+      when: [{ left: "{{ Arguments.title }}", operator: ">", right: "1" }]
       arguments: { prompt: "x" }
 "#,
     )
@@ -468,12 +522,14 @@ async fn loop_runs_max_times_and_warns() {
     let run = run(
         CODER,
         r#"
+    - { name: init, type: set, arguments: { i: { value: "0", type: number } } }
     - name: l
       type: loop
       arguments:
         steps:
+          - { name: count, type: set, arguments: { i: { value: "{{ Variables.i + 1 }}", type: number } } }
           - { name: a, context: c, type: agent, arguments: { prompt: "x" } }
-    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Steps.l.output }}|{{ Steps.a.output }}" } }
+    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Variables.i }}|{{ Contexts.c.last().content }}" } }
 "#,
     )
     .await;
@@ -493,14 +549,16 @@ async fn loop_stops_when_until_is_true() {
     let run = run(
         CODER,
         r#"
+    - { name: init, type: set, arguments: { i: { value: "0", type: number } } }
     - name: l
       type: loop
       arguments:
         max: 5
-        until: [{ left: "{{ Steps.a.output }}", operator: "~=", right: "^reply 2:" }]
+        until: [{ left: "{{ Contexts.c.last().content }}", operator: "~=", right: "^reply 2:" }]
         steps:
+          - { name: count, type: set, arguments: { i: { value: "{{ Variables.i + 1 }}", type: number } } }
           - { name: a, context: c, type: agent, arguments: { prompt: "x" } }
-    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Steps.l.output }}|{{ Steps.a.output }}" } }
+    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Variables.i }}|{{ Contexts.c.last().content }}" } }
 "#,
     )
     .await;
@@ -518,11 +576,11 @@ async fn when_gates_the_loop_and_its_inner_steps() {
         r#"
     - name: l
       type: loop
-      when: [{ left: "{{ Body.pr.title }}", operator: "==", right: "Other" }]
+      when: [{ left: "{{ Arguments.title }}", operator: "==", right: "Other" }]
       arguments:
         steps:
           - { name: a, context: c, type: agent, arguments: { prompt: "x" } }
-    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Steps.l.output }}" } }
+    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Contexts.c.last().content }}" } }
 "#,
     )
     .await;
@@ -541,7 +599,7 @@ async fn when_gates_the_loop_and_its_inner_steps() {
           - name: b
             context: c
             type: agent
-            when: [{ left: "{{ Steps.a.output }}", operator: "~=", right: "^reply 1:" }]
+            when: [{ left: "{{ Contexts.c.last().content }}", operator: "~=", right: "^reply 1:" }]
             arguments: { prompt: "y" }
 "#,
     )
@@ -578,4 +636,330 @@ async fn failing_inner_step_fails_the_flow_and_cleans_up() {
     );
     assert_eq!(run.calls.len(), 1);
     assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
+}
+
+const CHECKED: &str = r#"
+    name: { required: true, pattern: "^[a-z]+$" }
+    n: { type: number }
+    f: { type: float }
+    opt: {}"#;
+
+const PRINT: &str = r#"
+    - { name: a, context: c, type: agent, arguments: { prompt: "{{ Arguments.name }}|{{ Arguments.n * 2 }}|{{ Arguments.f }}|{{ Arguments.opt }}" } }
+"#;
+
+#[tokio::test]
+async fn invalid_arguments_fail_before_any_step_runs() {
+    for (input, expected) in [
+        (
+            json!({"name": "ok", "other": "x"}),
+            "argument 'other' is not declared",
+        ),
+        (json!({}), "argument 'name' is required"),
+        (
+            json!({"name": "ok", "n": "abc"}),
+            "argument 'n': \"abc\" is not a number",
+        ),
+        (
+            json!({"name": "ok", "n": 1.5}),
+            "argument 'n': 1.5 is not a number",
+        ),
+        (json!({"name": "ok", "f": "x"}), "argument 'f'"),
+        (json!({"name": "Bad"}), "does not match '^[a-z]+$'"),
+        (
+            json!({"name": null}),
+            "argument 'name': null is not a string",
+        ),
+    ] {
+        let run = execute(
+            definition("test_flow", CHECKED, CODER, PRINT),
+            input.clone(),
+            vec![],
+            |_| {},
+        )
+        .await;
+        let err = run.result.unwrap_err();
+        assert_eq!(err.translation_key, "flow_arguments_invalid", "{}", input);
+        assert!(
+            err.internal_message.contains(expected),
+            "{}: {}",
+            input,
+            err.internal_message
+        );
+        assert!(run.calls.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn typed_arguments_are_rendered() {
+    let run = execute(
+        definition("test_flow", CHECKED, CODER, PRINT),
+        json!({"name": "ok", "n": " 21 ", "f": "2.5"}),
+        vec![],
+        |_| {},
+    )
+    .await;
+
+    run.result.unwrap();
+    assert_eq!(run.calls[0].prompt, "ok|42|2.5|<NULL>");
+    assert!(logged(&run.logger, RecordedLevel::Warn, "'Arguments.opt'"));
+}
+
+#[tokio::test]
+async fn set_extracts_converts_and_falls_back() {
+    let run = run(
+        CODER,
+        r#"
+    - { name: ask, context: c, type: agent, arguments: { prompt: "The result was 1." } }
+    - name: parse
+      type: set
+      arguments:
+        result: { value: "{{ Contexts.c.last().content }}", type: number, extract: "result was (\\d+)" }
+        missing: { value: "{{ Contexts.c.last().content }}", type: number, extract: "nothing (\\d+)" }
+        fallback: { value: "abc", type: float, default: 1.5 }
+        whole: { value: "id-42-x", extract: "\\d+" }
+    - { name: use, context: c, type: agent, arguments: { prompt: "{{ Variables.result + 1 }}|{{ Variables.missing }}|{{ Variables.fallback }}|{{ Variables.whole }}" } }
+"#,
+    )
+    .await;
+
+    run.result.unwrap();
+    assert_eq!(run.calls[1].prompt, "2|0|1.5|42");
+    let warnings = run.logger.messages(RecordedLevel::Warn);
+    assert_eq!(warnings.len(), 2, "{:?}", warnings);
+    assert!(logged(
+        &run.logger,
+        RecordedLevel::Warn,
+        "Flow 'test_flow' step 'parse': variable 'missing'"
+    ));
+    assert!(logged(
+        &run.logger,
+        RecordedLevel::Warn,
+        "variable 'fallback': 'abc' is not a float, using default 1.5"
+    ));
+}
+
+#[tokio::test]
+async fn set_renders_all_variables_against_the_same_snapshot() {
+    let run = run(
+        CODER,
+        r#"
+    - { name: first, type: set, arguments: { a: { value: "1", type: number } } }
+    - name: second
+      type: set
+      arguments:
+        a: { value: "{{ Variables.a + 1 }}", type: number }
+        b: { value: "{{ Variables.a }}" }
+    - { name: use, context: c, type: agent, arguments: { prompt: "{{ Variables.a }}|{{ Variables.b }}" } }
+"#,
+    )
+    .await;
+
+    run.result.unwrap();
+    assert_eq!(run.calls[0].prompt, "2|1");
+}
+
+#[tokio::test]
+async fn variables_set_in_a_loop_drive_when_and_until() {
+    let run = run(
+        CODER,
+        r#"
+    - { name: init, type: set, arguments: { i: { value: "0", type: number } } }
+    - name: l
+      type: loop
+      arguments:
+        max: 5
+        until: [{ left: "{{ Variables.i }}", operator: ">=", right: "3" }]
+        steps:
+          - { name: count, type: set, arguments: { i: { value: "{{ Variables.i + 1 }}", type: number } } }
+          - name: a
+            context: c
+            type: agent
+            when: [{ left: "{{ Variables.i }}", operator: "==", right: "2" }]
+            arguments: { prompt: "i={{ Variables.i }}" }
+    - { name: after, context: c, type: agent, arguments: { prompt: "{{ Variables.i }}" } }
+"#,
+    )
+    .await;
+
+    run.result.unwrap();
+    let prompts: Vec<&str> = run.calls.iter().map(|call| call.prompt.as_str()).collect();
+    assert_eq!(prompts, ["i=2", "3"]);
+    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
+}
+
+fn child() -> Definition {
+    definition(
+        "child",
+        "    x: { type: number, required: true }",
+        CODER,
+        r#"
+    - { name: double, type: set, arguments: { doubled: { value: "{{ Arguments.x * 2 }}", type: number } } }
+    - { name: a, context: c, type: agent, arguments: { prompt: "child {{ Arguments.x }}|{{ Contexts.p }}" } }
+"#,
+    )
+}
+
+#[tokio::test]
+async fn flow_step_runs_the_child_and_exposes_its_variables() {
+    let run = execute(
+        flow(
+            "    p: { agent: coder }",
+            r#"
+    - { name: before, context: p, type: agent, arguments: { prompt: "parent" } }
+    - { name: call, type: flow, arguments: { flow: child, arguments: { x: "{{ Arguments.n }}" } } }
+    - { name: after, context: p, type: agent, arguments: { prompt: "{{ Flows.call.doubled }}" } }
+"#,
+        ),
+        json!({"n": 21}),
+        vec![child()],
+        |_| {},
+    )
+    .await;
+
+    run.result.unwrap();
+    let prompts: Vec<&str> = run.calls.iter().map(|call| call.prompt.as_str()).collect();
+    // The child has its own contexts and doesn't see the parent's.
+    assert_eq!(prompts, ["parent", "child 21|<NULL>", "42"]);
+    assert_eq!(run.calls[1].history, ["user"]);
+    assert_eq!(run.calls[2].history, ["user", "assistant", "user"]);
+    assert!(logged(
+        &run.logger,
+        RecordedLevel::Info,
+        "Flow 'child' finished"
+    ));
+}
+
+#[tokio::test]
+async fn flow_step_fails_on_invalid_child_arguments() {
+    for mapping in ["{ y: \"1\" }", "{}", "{ x: abc }"] {
+        let run = execute(
+            flow(
+                CODER,
+                &format!(
+                    r#"
+    - {{ name: call, type: flow, arguments: {{ flow: child, arguments: {} }} }}
+    - {{ name: never, context: c, type: agent, arguments: {{ prompt: "x" }} }}
+"#,
+                    mapping
+                ),
+            ),
+            json!({}),
+            vec![child()],
+            |_| {},
+        )
+        .await;
+
+        let err = run.result.unwrap_err();
+        assert_eq!(err.translation_key, "flow_arguments_invalid", "{}", mapping);
+        assert!(
+            err.internal_message
+                .starts_with("Flow 'test_flow' step 'call' failed: Flow 'child'")
+        );
+        assert!(run.calls.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn flow_step_fails_with_the_child() {
+    let missing = run(
+        CODER,
+        r#"
+    - { name: call, type: flow, arguments: { flow: nope } }
+    - { name: never, context: c, type: agent, arguments: { prompt: "x" } }
+"#,
+    )
+    .await;
+    assert_eq!(
+        missing.result.unwrap_err().translation_key,
+        "flow_not_found"
+    );
+
+    let failing = definition(
+        "failing",
+        "    {}",
+        CODER,
+        "    - { name: broken, context: c, type: tool, arguments: { tool: fail } }",
+    );
+    let run = execute(
+        flow(
+            CODER,
+            r#"
+    - { name: call, type: flow, arguments: { flow: failing } }
+    - { name: never, context: c, type: agent, arguments: { prompt: "x" } }
+"#,
+        ),
+        json!({}),
+        vec![failing],
+        |_| {},
+    )
+    .await;
+    let err = run.result.unwrap_err();
+    assert!(
+        err.internal_message
+            .contains("step 'call' failed: Flow 'failing' step 'broken' failed")
+    );
+    assert!(run.calls.is_empty());
+}
+
+#[tokio::test]
+async fn recursive_flow_steps_stop_at_the_depth_limit() {
+    let recursive = definition(
+        "recursive",
+        "    {}",
+        CODER,
+        r#"
+    - { name: again, type: flow, arguments: { flow: recursive } }
+    - { name: never, context: c, type: agent, arguments: { prompt: "x" } }
+"#,
+    );
+    let run = execute(recursive.clone(), json!({}), vec![recursive], |_| {}).await;
+
+    let err = run.result.unwrap_err();
+    assert_eq!(err.translation_key, "flow_call_too_deep");
+    let started = run
+        .logger
+        .messages(RecordedLevel::Info)
+        .iter()
+        .filter(|message| message.contains("Flow 'recursive' started"))
+        .count();
+    assert_eq!(started, 9);
+    assert!(run.calls.is_empty());
+}
+
+#[tokio::test]
+async fn pythagoras_example_calls_the_calculate_example() {
+    let calculate: Definition =
+        yaml_serde::from_str(include_str!("../../../examples/flows/calculate.yaml")).unwrap();
+    let pythagoras: Definition =
+        yaml_serde::from_str(include_str!("../../../examples/flows/pythagoras.yaml")).unwrap();
+
+    // The scripted agent echoes the instruction, so `calculate` returns the
+    // instruction's number: 3, 4, then the root of 3.0 + 4.0.
+    let run = execute(
+        pythagoras,
+        json!({"a": "3", "b": 4}),
+        vec![calculate],
+        |_| {},
+    )
+    .await;
+
+    run.result.unwrap();
+    let prompts: Vec<&str> = run.calls.iter().map(|call| call.prompt.as_str()).collect();
+    assert_eq!(
+        prompts[..3],
+        [
+            "Square the number 3.0",
+            "Square the number 4.0",
+            "Take the square root of 7.0"
+        ]
+    );
+    assert_eq!(run.calls[3].agent, "dispatcher");
+    assert!(
+        prompts[3]
+            .contains("computed as 3.0 and 4.0,\ntheir sum as 7.0 and the hypotenuse as 7.0."),
+        "{}",
+        prompts[3]
+    );
+    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
 }

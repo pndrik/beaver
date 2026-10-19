@@ -25,4 +25,8 @@ tools:
     - name: js_bitbucket_pr_list
     - name: js_bitbucket_pr_get
     - name: js_bitbucket_pr_create
+    - name: js_bitbucket_pr_update
+    - name: js_bitbucket_pr_reply
+    - name: js_bitbucket_pr_approve
+    - name: js_bitbucket_pr_decline
     - name: ^mcp_atlassian_.*$

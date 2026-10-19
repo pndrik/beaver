@@ -118,15 +118,6 @@ pub(super) async fn prepare(
     Ok(canonical)
 }
 
-/// The chroot relative to the global chroot, `.` for the global chroot itself.
-pub(super) fn relative(global: &Path, chroot: &Path) -> String {
-    match chroot.strip_prefix(global) {
-        Ok(rel) if rel.as_os_str().is_empty() => ".".to_string(),
-        Ok(rel) => rel.to_string_lossy().to_string(),
-        Err(_) => chroot.to_string_lossy().to_string(),
-    }
-}
-
 pub(super) async fn cleanup(ctx: &AppContext, chroot: &Path) {
     let is_global = global_chroot(ctx)
         .await

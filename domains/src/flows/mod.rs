@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::core::{models::AppError, traits::TemplateEngine};
 
+pub(crate) mod helpers;
 pub mod models;
 pub mod traits;
 pub mod use_cases;

@@ -1,0 +1,61 @@
+---
+# Trigger with:
+#   curl -X POST -H 'Authorization: Bearer REPLACE_ME' -H 'Content-Type: application/json' \
+#     -d '{"a": 3, "b": 4}' localhost:8080/hooks/pythagoras
+version: 1
+metadata:
+  name: pythagoras
+  display_name: Pythagoras
+  description: Computes the hypotenuse of a right triangle step by step with the calculate flow, then has it checked.
+spec:
+  arguments:
+    a: { type: float, required: true }
+    b: { type: float, required: true }
+  contexts:
+    checker:
+      agent: dispatcher
+  triggers:
+    webhook:
+      name: pythagoras
+      token: "REPLACE_ME"
+      arguments:
+        a: "{{ Body.a }}"
+        b: "{{ Body.b }}"
+  steps:
+    - name: square_a
+      type: flow
+      arguments:
+        flow: calculate
+        arguments:
+          instruction: "Square the number {{ Arguments.a }}"
+
+    - name: square_b
+      type: flow
+      arguments:
+        flow: calculate
+        arguments:
+          instruction: "Square the number {{ Arguments.b }}"
+
+    - name: sum
+      type: set
+      arguments:
+        squares: { value: "{{ Flows.square_a.result + Flows.square_b.result }}", type: float }
+
+    - name: root
+      type: flow
+      arguments:
+        flow: calculate
+        arguments:
+          instruction: "Take the square root of {{ Variables.squares }}"
+
+    - name: check
+      context: checker
+      type: agent
+      # A failed calculation leaves `result` at 0.0.
+      when: [{ left: "{{ Flows.root.result }}", operator: ">", right: "0" }]
+      arguments:
+        prompt: |
+          A right triangle has the legs a = {{ Arguments.a }} and b = {{ Arguments.b }}.
+          The squares were computed as {{ Flows.square_a.result }} and {{ Flows.square_b.result }},
+          their sum as {{ Variables.squares }} and the hypotenuse as {{ Flows.root.result }}.
+          Check whether every number is correct.

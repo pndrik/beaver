@@ -38,5 +38,8 @@ tools:
     js_bitbucket_pr:
       api_key: ""
       base_url: "https://api.bitbucket.org"
+    js_slack:
+      api_key: ""
+      base_url: "https://slack.com"
     git:
       repositories: []

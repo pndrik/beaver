@@ -101,16 +101,16 @@ impl SchemaField {
     /// `enum`, is one of its values. Integers also count as numbers.
     pub fn allows(&self, value: &CallValue) -> bool {
         let type_matches = match value {
-            CallValue::String(_) => self.field_type.allows(&SchemaFieldType::String),
+            CallValue::String(_) => self.type_.allows(&SchemaFieldType::String),
             CallValue::Integer(_) => {
-                self.field_type.allows(&SchemaFieldType::Integer)
-                    || self.field_type.allows(&SchemaFieldType::Number)
+                self.type_.allows(&SchemaFieldType::Integer)
+                    || self.type_.allows(&SchemaFieldType::Number)
             }
-            CallValue::Float(_) => self.field_type.allows(&SchemaFieldType::Number),
-            CallValue::Boolean(_) => self.field_type.allows(&SchemaFieldType::Boolean),
-            CallValue::Array(_) => self.field_type.allows(&SchemaFieldType::Array),
-            CallValue::Object(_) => self.field_type.allows(&SchemaFieldType::Object),
-            CallValue::Null => self.field_type.allows(&SchemaFieldType::Null),
+            CallValue::Float(_) => self.type_.allows(&SchemaFieldType::Number),
+            CallValue::Boolean(_) => self.type_.allows(&SchemaFieldType::Boolean),
+            CallValue::Array(_) => self.type_.allows(&SchemaFieldType::Array),
+            CallValue::Object(_) => self.type_.allows(&SchemaFieldType::Object),
+            CallValue::Null => self.type_.allows(&SchemaFieldType::Null),
         };
 
         type_matches

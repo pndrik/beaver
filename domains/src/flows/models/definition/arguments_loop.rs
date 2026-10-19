@@ -2,9 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use super::{Condition, Step, invalid, validate_list};
-use crate::core::models::{AppContext, AppError};
+use super::{Condition, Step, any_of, invalid, validate_list};
+use crate::core::{
+    models::{AppContext, AppError},
+    traits::TemplateEngine,
+};
 
 const LOOP_MAX_LIMIT: u32 = 100;
 
@@ -23,6 +27,19 @@ pub struct ArgumentsLoop {
 }
 
 impl ArgumentsLoop {
+    /// Whether `until` ends the loop; false without `until`.
+    pub(crate) async fn done(
+        &self,
+        ctx: &AppContext,
+        engine: &(dyn TemplateEngine + Send + Sync),
+        values: &Value,
+    ) -> Result<bool, AppError> {
+        match &self.until {
+            Some(until) => any_of(ctx, engine, until, values).await,
+            None => Ok(false),
+        }
+    }
+
     pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
         if !(1..=LOOP_MAX_LIMIT).contains(&self.max) {
             return Err(invalid(

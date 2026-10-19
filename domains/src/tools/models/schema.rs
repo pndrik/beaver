@@ -35,21 +35,21 @@ impl Default for SchemaType {
 }
 
 impl From<SchemaFieldType> for SchemaType {
-    fn from(field_type: SchemaFieldType) -> Self {
-        Self::Single(field_type)
+    fn from(type_: SchemaFieldType) -> Self {
+        Self::Single(type_)
     }
 }
 
 impl SchemaType {
-    /// Whether this is exactly `field_type`, not a union containing it.
-    pub fn is(&self, field_type: &SchemaFieldType) -> bool {
-        matches!(self, Self::Single(t) if t == field_type)
+    /// Whether this is exactly `type_`, not a union containing it.
+    pub fn is(&self, type_: &SchemaFieldType) -> bool {
+        matches!(self, Self::Single(t) if t == type_)
     }
 
-    pub fn allows(&self, field_type: &SchemaFieldType) -> bool {
+    pub fn allows(&self, type_: &SchemaFieldType) -> bool {
         match self {
-            Self::Single(t) => t == field_type,
-            Self::Union(types) => types.contains(field_type),
+            Self::Single(t) => t == type_,
+            Self::Union(types) => types.contains(type_),
         }
     }
 }
@@ -64,7 +64,7 @@ pub enum SchemaItems {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SchemaField {
     #[serde(rename = "type", default)]
-    pub field_type: SchemaType,
+    pub type_: SchemaType,
     #[serde(rename = "enum", skip_serializing_if = "Option::is_none")]
     pub enumeration: Option<Vec<serde_json::Value>>,
     #[serde(default)]
@@ -79,12 +79,12 @@ pub struct SchemaField {
 
 impl SchemaField {
     pub fn new(
-        field_type: SchemaFieldType,
+        type_: SchemaFieldType,
         description: &str,
         enumeration: Option<Vec<String>>,
     ) -> Self {
         Self {
-            field_type: field_type.into(),
+            type_: type_.into(),
             enumeration: enumeration
                 .map(|values| values.into_iter().map(serde_json::Value::String).collect()),
             description: description.to_string(),
@@ -101,7 +101,7 @@ impl SchemaField {
         required: bool,
         field: SchemaField,
     ) -> Result<(), AppError> {
-        match &self.field_type {
+        match &self.type_ {
             SchemaType::Single(SchemaFieldType::Object) => {
                 self.add_property(ctx, name, required, field)
             }
@@ -109,18 +109,18 @@ impl SchemaField {
             _ => Err(app_error!(
                 Validation,
                 "internal_error",
-                format!("Cannot add child to field of type {:?}", self.field_type),
+                format!("Cannot add child to field of type {:?}", self.type_),
                 ctx.clone()
             )),
         }
     }
 
     pub fn set_items(&mut self, ctx: &AppContext, field: SchemaField) -> Result<(), AppError> {
-        if !self.field_type.is(&SchemaFieldType::Array) {
+        if !self.type_.is(&SchemaFieldType::Array) {
             return Err(app_error!(
                 Validation,
                 "internal_error",
-                format!("Cannot add items to field of type {:?}", self.field_type),
+                format!("Cannot add items to field of type {:?}", self.type_),
                 ctx.clone()
             ));
         }
@@ -129,11 +129,11 @@ impl SchemaField {
     }
 
     pub fn add_item(&mut self, ctx: &AppContext, field: SchemaField) -> Result<(), AppError> {
-        if !self.field_type.is(&SchemaFieldType::Array) {
+        if !self.type_.is(&SchemaFieldType::Array) {
             return Err(app_error!(
                 Validation,
                 "internal_error",
-                format!("Cannot add child to field of type {:?}", self.field_type),
+                format!("Cannot add child to field of type {:?}", self.type_),
                 ctx.clone()
             ));
         }
@@ -160,11 +160,11 @@ impl SchemaField {
         required: bool,
         field: SchemaField,
     ) -> Result<(), AppError> {
-        if !self.field_type.is(&SchemaFieldType::Object) {
+        if !self.type_.is(&SchemaFieldType::Object) {
             return Err(app_error!(
                 Validation,
                 "internal_error",
-                format!("Cannot add child to field of type {:?}", self.field_type),
+                format!("Cannot add child to field of type {:?}", self.type_),
                 ctx.clone()
             ));
         }
@@ -192,7 +192,7 @@ pub struct Schema {
     #[serde(default)]
     pub description: String,
     #[serde(rename = "type")]
-    pub field_type: SchemaFieldType,
+    pub type_: SchemaFieldType,
     #[serde(default)]
     pub required: Vec<String>,
     #[serde(default)]
@@ -204,7 +204,7 @@ impl Schema {
         Self {
             title: title.to_string(),
             description: description.to_string(),
-            field_type: SchemaFieldType::Object,
+            type_: SchemaFieldType::Object,
             required: Vec::new(),
             properties: BTreeMap::new(),
         }

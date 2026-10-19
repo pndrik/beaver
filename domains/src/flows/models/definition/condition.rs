@@ -1,16 +1,19 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::{future::Future, pin::Pin};
 
 use super::invalid;
 use crate::{
     app_error,
-    core::models::{AppContext, AppError},
+    core::{
+        models::{AppContext, AppError},
+        traits::TemplateEngine,
+    },
+    flows::helpers::regex,
 };
-
-const REGEX_SIZE_LIMIT: usize = 1024 * 1024;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged, deny_unknown_fields)]
@@ -36,6 +39,52 @@ impl Condition {
             Condition::Compare { .. } => Ok(()),
         }
     }
+
+    /// Renders both sides of every comparison against `values`.
+    pub(crate) fn eval<'a>(
+        &'a self,
+        ctx: &'a AppContext,
+        engine: &'a (dyn TemplateEngine + Send + Sync),
+        values: &'a Value,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, AppError>> + Send + 'a>> {
+        Box::pin(async move {
+            match self {
+                Condition::Any { any } => any_of(ctx, engine, any, values).await,
+                Condition::All { all } => {
+                    for condition in all {
+                        if !condition.eval(ctx, engine, values).await? {
+                            return Ok(false);
+                        }
+                    }
+                    Ok(true)
+                }
+                Condition::Compare {
+                    left,
+                    operator,
+                    right,
+                } => {
+                    let left = engine.render(ctx, left, values).await?;
+                    let right = engine.render(ctx, right, values).await?;
+                    operator.compare(ctx, &left, &right)
+                }
+            }
+        })
+    }
+}
+
+/// True if any of `conditions` is true.
+pub(crate) async fn any_of(
+    ctx: &AppContext,
+    engine: &(dyn TemplateEngine + Send + Sync),
+    conditions: &[Condition],
+    values: &Value,
+) -> Result<bool, AppError> {
+    for condition in conditions {
+        if condition.eval(ctx, engine, values).await? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Rejects an empty list and validates every item.
@@ -72,7 +121,7 @@ pub enum Operator {
 
 impl Operator {
     /// Fails with `flow_condition_invalid` if a numeric side is not a number
-    /// or the `~=` pattern is not a valid regex.
+    /// and with `regex_invalid` if the `~=` pattern is not a valid regex.
     pub fn compare(&self, ctx: &AppContext, left: &str, right: &str) -> Result<bool, AppError> {
         Ok(match self {
             Operator::Eq => left == right,
@@ -81,11 +130,7 @@ impl Operator {
             Operator::Le => number(ctx, left)? <= number(ctx, right)?,
             Operator::Gt => number(ctx, left)? > number(ctx, right)?,
             Operator::Ge => number(ctx, left)? >= number(ctx, right)?,
-            Operator::Match => RegexBuilder::new(right)
-                .size_limit(REGEX_SIZE_LIMIT)
-                .build()
-                .map_err(|e| condition_invalid(ctx, &format!("invalid regex '{}': {}", right, e)))?
-                .is_match(left),
+            Operator::Match => regex(ctx, right)?.is_match(left),
         })
     }
 }

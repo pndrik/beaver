@@ -2,8 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-use super::TriggerWebhook;
+use super::{Argument, TriggerWebhook};
 use crate::core::models::{AppContext, AppError};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -14,9 +15,13 @@ pub struct Triggers {
 }
 
 impl Triggers {
-    pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
+    pub fn validate(
+        &self,
+        ctx: &AppContext,
+        arguments: &BTreeMap<String, Argument>,
+    ) -> Result<(), AppError> {
         match &self.webhook {
-            Some(webhook) => webhook.validate(ctx),
+            Some(webhook) => webhook.validate(ctx, arguments),
             None => Ok(()),
         }
     }

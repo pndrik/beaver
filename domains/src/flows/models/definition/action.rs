@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{ArgumentsAgent, ArgumentsLoop, ArgumentsTool};
+use super::{ArgumentsAgent, ArgumentsFlow, ArgumentsLoop, ArgumentsSet, ArgumentsTool};
 use crate::core::models::{AppContext, AppError};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -12,6 +12,8 @@ pub enum Action {
     Agent(ArgumentsAgent),
     Tool(ArgumentsTool),
     Loop(ArgumentsLoop),
+    Set(ArgumentsSet),
+    Flow(ArgumentsFlow),
 }
 
 impl Action {
@@ -20,6 +22,8 @@ impl Action {
             Action::Agent(arguments) => arguments.validate(ctx),
             Action::Tool(arguments) => arguments.validate(ctx),
             Action::Loop(arguments) => arguments.validate(ctx),
+            Action::Set(arguments) => arguments.validate(ctx),
+            Action::Flow(arguments) => arguments.validate(ctx),
         }
     }
 }

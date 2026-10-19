@@ -2,20 +2,19 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use super::{Action, Condition, identifier, invalid, validate_list, within};
-use crate::core::models::{AppContext, AppError};
+use super::{Action, Condition, any_of, identifier, invalid, validate_list, within};
+use crate::core::{
+    models::{AppContext, AppError},
+    traits::TemplateEngine,
+};
 
-/// `type` and `arguments` of the action sit next to `name` and `context`.
-/// `flatten` rules out `deny_unknown_fields` here; the argument structs
-/// still reject unknown fields.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Step {
     pub name: String,
-    /// Required for agent and tool steps, forbidden for loops.
     #[serde(default)]
     pub context: Option<String>,
-    /// The step runs if any item is true, or if `when` is missing.
     #[serde(default)]
     pub when: Option<Vec<Condition>>,
     #[serde(flatten)]
@@ -23,6 +22,23 @@ pub struct Step {
 }
 
 impl Step {
+    pub fn context_name(&self) -> &str {
+        self.context.as_deref().unwrap_or_default()
+    }
+
+    /// Whether `when` allows the step to run; true without `when`.
+    pub(crate) async fn runs(
+        &self,
+        ctx: &AppContext,
+        engine: &(dyn TemplateEngine + Send + Sync),
+        values: &Value,
+    ) -> Result<bool, AppError> {
+        match &self.when {
+            Some(when) => any_of(ctx, engine, when, values).await,
+            None => Ok(true),
+        }
+    }
+
     pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
         identifier(ctx, "step", &self.name)?;
         self.check(ctx)
@@ -32,6 +48,10 @@ impl Step {
     fn check(&self, ctx: &AppContext) -> Result<(), AppError> {
         match (&self.action, &self.context) {
             (Action::Loop(_), Some(_)) => return Err(invalid(ctx, "a loop has no context")),
+            (Action::Set(_), Some(_)) => return Err(invalid(ctx, "a set step has no context")),
+            (Action::Flow(_), Some(_)) => {
+                return Err(invalid(ctx, "a flow step has no context"));
+            }
             (Action::Agent(_) | Action::Tool(_), None) => {
                 return Err(invalid(ctx, "context is missing"));
             }

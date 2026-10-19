@@ -56,10 +56,10 @@ async fn missing_intermediate_renders_null_and_warns_once() {
 
 #[tokio::test]
 async fn missing_root_renders_null_and_warns() {
-    let (result, warnings) = render("{{ Steps.clone.output }}", json!({})).await;
+    let (result, warnings) = render("{{ Variables.clone.output }}", json!({})).await;
     assert_eq!(result.unwrap(), "<NULL>");
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains("'Steps.clone.output'"));
+    assert!(warnings[0].contains("'Variables.clone.output'"));
 }
 
 #[tokio::test]
@@ -108,4 +108,50 @@ async fn syntax_error_fails() {
 async fn renders_braces_next_to_expressions() {
     let (result, _) = render(r#"{"n": {{ Body.n }}}"#, json!({"Body": {"n": 37}})).await;
     assert_eq!(result.unwrap(), r#"{"n": 37}"#);
+}
+
+fn contexts() -> Value {
+    json!({"Contexts": {
+        "c": [
+            {"type": "user", "content": "first"},
+            {"type": "assistant", "content": "second"}
+        ],
+        "empty": []
+    }})
+}
+
+#[tokio::test]
+async fn last_returns_the_last_item() {
+    let (result, warnings) = render("{{ Contexts.c.last().content }}", contexts()).await;
+    assert_eq!(result.unwrap(), "second");
+    assert!(warnings.is_empty(), "{:?}", warnings);
+}
+
+#[tokio::test]
+async fn last_of_an_empty_list_is_undefined() {
+    let (result, warnings) = render(
+        "{{ Contexts.empty.last().content }}|{{ Contexts.empty.last() is defined }}",
+        contexts(),
+    )
+    .await;
+    assert_eq!(result.unwrap(), "<NULL>|False");
+    assert!(warnings.is_empty(), "{:?}", warnings);
+}
+
+#[tokio::test]
+async fn last_of_a_missing_context_warns_once() {
+    let (result, warnings) = render(
+        "{{ Contexts.missing.last().content }} {{ Contexts.missing.last().type }}",
+        contexts(),
+    )
+    .await;
+    assert_eq!(result.unwrap(), "<NULL> <NULL>");
+    assert_eq!(warnings.len(), 1, "{:?}", warnings);
+    assert!(warnings[0].contains("'Contexts.missing'"));
+}
+
+#[tokio::test]
+async fn unknown_methods_still_fail() {
+    let (result, _) = render("{{ Contexts.c.first() }}", contexts()).await;
+    assert!(result.is_err());
 }

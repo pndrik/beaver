@@ -3,8 +3,9 @@
 
 use async_trait::async_trait;
 use minijinja::{
-    AutoEscape, Environment, UndefinedBehavior, escape_formatter, syntax::SyntaxConfig,
-    value::Serde,
+    AutoEscape, Environment, Error, ErrorKind, UndefinedBehavior, escape_formatter,
+    syntax::SyntaxConfig,
+    value::{Serde, Value as TemplateValue, ValueKind},
 };
 use serde_json::Value;
 
@@ -19,6 +20,7 @@ mod tests;
 
 const TEMPLATE_NAME: &str = "template";
 const UNDEFINED_PLACEHOLDER: &str = "<NULL>";
+const LAST_METHOD: &str = "last";
 
 pub struct MiniJinjaTemplateEngine {}
 
@@ -52,13 +54,34 @@ fn new_environment(ctx: &AppContext) -> Result<Environment<'static>, AppError> {
         }
         escape_formatter(out, state, value)
     });
+    env.set_unknown_method_callback(|_, value, method, args| {
+        if method == LAST_METHOD && args.is_empty() {
+            return last(value);
+        }
+        Err(Error::from(ErrorKind::UnknownMethod))
+    });
 
     Ok(env)
+}
+
+fn last(value: &TemplateValue) -> Result<TemplateValue, Error> {
+    match value.kind() {
+        ValueKind::Undefined => Ok(TemplateValue::UNDEFINED),
+        ValueKind::Seq => match value.len() {
+            Some(len) if len > 0 => value.get_item_by_index(len - 1),
+            _ => Ok(TemplateValue::UNDEFINED),
+        },
+        _ => Err(Error::from(ErrorKind::UnknownMethod)),
+    }
 }
 
 fn path_exists(values: &Value, path: &str) -> bool {
     let mut current = values;
     for segment in path.split('.') {
+        // `undeclared_variables` reports `a.last()` as `a.last`.
+        if current.is_array() && segment == LAST_METHOD {
+            return true;
+        }
         match current.get(segment) {
             Some(next) => current = next,
             None => return false,
@@ -67,9 +90,6 @@ fn path_exists(values: &Value, path: &str) -> bool {
     true
 }
 
-/// Returns the referenced paths that are missing in `values`. A path is skipped
-/// when one of its prefixes is already missing, so `Body.a` and `Body.a.b`
-/// produce a single warning.
 fn missing_paths(
     env: &Environment,
     referenced: impl IntoIterator<Item = String>,
@@ -92,7 +112,14 @@ fn missing_paths(
         {
             continue;
         }
-        if !path_exists(values, &path) {
+        if path_exists(values, &path) {
+            continue;
+        }
+        let path = match path.strip_suffix(&format!(".{}", LAST_METHOD)) {
+            Some(list) if !path_exists(values, list) => list.to_string(),
+            _ => path,
+        };
+        if !missing.contains(&path) {
             missing.push(path);
         }
     }

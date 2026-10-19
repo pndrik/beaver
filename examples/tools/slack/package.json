@@ -1,0 +1,168 @@
+{
+  "name": "slack",
+  "version": "0.0.1",
+  "description": "A Beaver tool that can search, read and write Slack messages, threads and reactions. This tool is not linked to or affiliated with Slack or Salesforce in any way.",
+  "author": "Patrick Hunziker <patrick@hunziker.io>",
+  "license": "Elastic License 2.0",
+
+  "config": {
+    "beaver": {
+      "tools": {
+        "slack_search": {
+          "main": "slack_search.js",
+          "description": "Searches Slack messages using Slack search syntax (e.g. 'deploy in:#ops from:@alice after:2026-01-01'). Returns the most recent matches first unless sort or sort_dir say otherwise. Requires a user token (xoxp-) with the search:read scope.",
+          "scopes": {
+            "fetch": {
+              "methods": ["GET"],
+              "urls": ["^https://slack\\.com/api/search\\.messages\\?.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "The search query."
+              },
+              "count": {
+                "type": "integer",
+                "description": "The maximum number of matches to return (1-100, default 20)."
+              },
+              "sort": {
+                "type": "string",
+                "description": "Order by message time (timestamp, default) or by relevance (score).",
+                "enum": ["timestamp", "score"]
+              },
+              "sort_dir": {
+                "type": "string",
+                "description": "Sort direction: desc (default, newest or most relevant first) or asc.",
+                "enum": ["desc", "asc"]
+              }
+            }
+          }
+        },
+        "slack_read": {
+          "main": "slack_read.js",
+          "description": "Reads recent messages from a Slack channel, or all messages of a thread if thread_ts is given. Requires the channels:history (and groups:history for private channels) scope.",
+          "scopes": {
+            "fetch": {
+              "methods": ["GET"],
+              "urls": ["^https://slack\\.com/api/conversations\\.(history|replies)\\?.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["channel"],
+            "properties": {
+              "channel": {
+                "type": "string",
+                "description": "The channel id (e.g. C0123456789)."
+              },
+              "thread_ts": {
+                "type": "string",
+                "description": "An optional timestamp of the thread's parent message. If given, the thread's messages are returned instead of the channel history."
+              },
+              "limit": {
+                "type": "integer",
+                "description": "The maximum number of messages to return (1-200)."
+              },
+              "oldest": {
+                "type": "string",
+                "description": "Only messages after this timestamp. Ignored when thread_ts is given."
+              },
+              "latest": {
+                "type": "string",
+                "description": "Only messages before this timestamp. Ignored when thread_ts is given."
+              }
+            }
+          }
+        },
+        "slack_post": {
+          "main": "slack_post.js",
+          "description": "Posts a new message to a Slack channel. Returns the channel and the message timestamp (ts), which can be used as thread_ts to start a thread. Requires the chat:write scope.",
+          "scopes": {
+            "fetch": {
+              "methods": ["POST"],
+              "urls": ["^https://slack\\.com/api/chat\\.postMessage$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["channel", "text"],
+            "properties": {
+              "channel": {
+                "type": "string",
+                "description": "The channel id (e.g. C0123456789)."
+              },
+              "text": {
+                "type": "string",
+                "description": "The message text in Slack mrkdwn format."
+              }
+            }
+          }
+        },
+        "slack_reply": {
+          "main": "slack_reply.js",
+          "description": "Replies in the thread of a Slack message. Starts a new thread if the message has none yet. Requires the chat:write scope.",
+          "scopes": {
+            "fetch": {
+              "methods": ["POST"],
+              "urls": ["^https://slack\\.com/api/chat\\.postMessage$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["channel", "thread_ts", "text"],
+            "properties": {
+              "channel": {
+                "type": "string",
+                "description": "The channel id (e.g. C0123456789)."
+              },
+              "thread_ts": {
+                "type": "string",
+                "description": "The timestamp of the thread's parent message."
+              },
+              "text": {
+                "type": "string",
+                "description": "The reply text in Slack mrkdwn format."
+              },
+              "broadcast": {
+                "type": "boolean",
+                "description": "Also show the reply in the channel (default false)."
+              }
+            }
+          }
+        },
+        "slack_react": {
+          "main": "slack_react.js",
+          "description": "Adds an emoji reaction to a Slack message. Requires the reactions:write scope.",
+          "scopes": {
+            "fetch": {
+              "methods": ["POST"],
+              "urls": ["^https://slack\\.com/api/reactions\\.add$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["channel", "timestamp", "name"],
+            "properties": {
+              "channel": {
+                "type": "string",
+                "description": "The channel id (e.g. C0123456789)."
+              },
+              "timestamp": {
+                "type": "string",
+                "description": "The timestamp (ts) of the message to react to."
+              },
+              "name": {
+                "type": "string",
+                "description": "The emoji name, with or without colons (e.g. tada or :tada:)."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -5,6 +5,11 @@ metadata:
   display_name: PR Review Flow
   description: Clones the repository of a Bitbucket pull request and reviews it.
 spec:
+  arguments:
+    state: { required: true }
+    branch: { required: true }
+    url: { required: true, pattern: "^https://" }
+    title: {}
   contexts:
     work:
       agent: coder
@@ -16,6 +21,11 @@ spec:
     webhook:
       name: pr_review_flow
       token: "REPLACE_ME"
+      arguments:
+        state: "{{ Body.pullrequest.state }}"
+        branch: "{{ Body.pullrequest.destination.branch.name }}"
+        url: "{{ Body.repository.links.html.href }}"
+        title: "{{ Body.pullrequest.title }}"
   steps:
     - name: clone
       context: work
@@ -23,13 +33,13 @@ spec:
       # Only open pull requests into main or develop.
       when: &reviewable
         - all:
-          - { left: "{{ Body.pullrequest.state }}", operator: "==", right: OPEN }
-          - { left: "{{ Body.pullrequest.destination.branch.name }}", operator: "~=", right: "^(main|develop)$" }
+          - { left: "{{ Arguments.state }}", operator: "==", right: OPEN }
+          - { left: "{{ Arguments.branch }}", operator: "~=", right: "^(main|develop)$" }
       arguments:
         tool: git_clone
         scopes: ["*"]
         arguments:
-          url: "{{ Body.repository.links.html.href }}"
+          url: "{{ Arguments.url }}"
           path: "/repo"
     - name: review
       context: work
@@ -37,5 +47,5 @@ spec:
       when: *reviewable
       arguments:
         prompt: |
-          Review the pull request "{{ Body.pullrequest.title }}" in /repo.
-          Clone said: {{ Steps.clone.output }}
+          Review the pull request "{{ Arguments.title }}" in /repo.
+          Clone said: {{ Contexts.work.last().content }}

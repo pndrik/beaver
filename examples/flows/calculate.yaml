@@ -1,0 +1,28 @@
+---
+# Called by other flows through a `flow` step, see pythagoras.yaml. It has no
+# webhook trigger. Callers read the result as `Flows.<step>.result`.
+version: 1
+metadata:
+  name: calculate
+  display_name: Calculate
+  description: Has the calculator carry out one arithmetic instruction and returns the result.
+spec:
+  arguments:
+    instruction: { required: true }
+  contexts:
+    # No chroot: called flows share `Ctx.trace_id` with their caller, and the
+    # calculator needs no files.
+    calculator:
+      agent: calculator
+  steps:
+    - name: compute
+      context: calculator
+      type: agent
+      arguments:
+        prompt: "{{ Arguments.instruction }}"
+
+    - name: parse
+      type: set
+      arguments:
+        # The last number in the answer.
+        result: { value: "{{ Contexts.calculator.last().content }}", type: float, extract: "(-?\\d+(?:\\.\\d+)?)\\s*$" }

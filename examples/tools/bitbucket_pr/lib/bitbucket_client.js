@@ -215,7 +215,89 @@ class BitbucketClient {
       throw new Error('Pull request ID is missing or invalid');
     }
 
-    return this.request(`/2.0/repositories/${this.workspace}/${repository}/pullrequests/${id}/comments`);
+    return this.requestAllPages(
+      `/2.0/repositories/${this.workspace}/${repository}/pullrequests/${id}/comments?pagelen=100`
+    );
+  }
+
+  updatePullRequest(repository, id, { title, description }) {
+    if (typeof repository !== 'string' || repository.length === 0) {
+      throw new Error('Repository is required');
+    }
+    if (typeof id !== 'number' || id < 0) {
+      throw new Error('Pull request ID is missing or invalid');
+    }
+    if (typeof description !== 'string') {
+      throw new Error('Description is required and must be a string');
+    }
+    if (title !== undefined && (typeof title !== 'string' || title.length === 0)) {
+      throw new Error('Title must be a non-empty string');
+    }
+
+    const body = { description };
+    if (title !== undefined) {
+      body.title = title;
+    }
+
+    return this.request(`/2.0/repositories/${this.workspace}/${repository}/pullrequests/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async replyToPullRequestComment(repository, id, commentId, comment) {
+    if (typeof repository !== 'string' || repository.length === 0) {
+      throw new Error('Repository is required');
+    }
+    if (typeof id !== 'number' || id < 0) {
+      throw new Error('Pull request ID is missing or invalid');
+    }
+    if (typeof commentId !== 'number' || commentId < 0) {
+      throw new Error('Comment ID is missing or invalid');
+    }
+    if (!comment || typeof comment !== 'string') {
+      throw new Error('Comment is required and must be a string');
+    }
+
+    let res = await this.request(`/2.0/repositories/${this.workspace}/${repository}/pullrequests/${id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: { raw: comment },
+        parent: { id: commentId }
+      }),
+    });
+
+    if (!res || typeof res.id !== 'number') {
+      throw new Error('Did not receive a valid response from Bitbucket API when replying to comment');
+    }
+
+    return res.id;
+  }
+
+  approvePullRequest(repository, id) {
+    if (typeof repository !== 'string' || repository.length === 0) {
+      throw new Error('Repository is required');
+    }
+    if (typeof id !== 'number' || id < 0) {
+      throw new Error('Pull request ID is missing or invalid');
+    }
+
+    return this.request(`/2.0/repositories/${this.workspace}/${repository}/pullrequests/${id}/approve`, {
+      method: 'POST',
+    });
+  }
+
+  declinePullRequest(repository, id) {
+    if (typeof repository !== 'string' || repository.length === 0) {
+      throw new Error('Repository is required');
+    }
+    if (typeof id !== 'number' || id < 0) {
+      throw new Error('Pull request ID is missing or invalid');
+    }
+
+    return this.request(`/2.0/repositories/${this.workspace}/${repository}/pullrequests/${id}/decline`, {
+      method: 'POST',
+    });
   }
 }
 

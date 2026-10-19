@@ -3,7 +3,7 @@
 
 use serde_json::json;
 
-use app_domains::flows::models::{Action, Chroot, Condition, Definition, Operator};
+use app_domains::flows::models::{Action, Chroot, Condition, Definition, Operator, ValueType};
 
 use crate::support;
 
@@ -21,9 +21,13 @@ fn parse_error(yaml: &str) -> String {
 }
 
 fn validation_error(yaml: &str) -> String {
+    validation_error_with(yaml, "flow_invalid")
+}
+
+fn validation_error_with(yaml: &str, translation_key: &str) -> String {
     let (ctx, _) = support::temp_context();
     let err = parse(yaml).validate(&ctx).unwrap_err();
-    assert_eq!(err.translation_key, "flow_invalid");
+    assert_eq!(err.translation_key, translation_key);
     err.internal_message
 }
 
@@ -265,12 +269,12 @@ fn parses_nested_conditions() {
       context: c
       type: agent
       when:
-        - { left: "{{ Body.region }}", operator: "~=", right: "^eu-" }
+        - { left: "{{ Arguments.region }}", operator: "~=", right: "^eu-" }
         - all:
-          - { left: "{{ Body.env }}", operator: "==", right: production }
+          - { left: "{{ Arguments.env }}", operator: "==", right: production }
           - any:
-            - { left: "{{ Body.n }}", operator: ">=", right: "3" }
-            - { left: "{{ Body.n }}", operator: "!=", right: "0" }
+            - { left: "{{ Arguments.n }}", operator: ">=", right: "3" }
+            - { left: "{{ Arguments.n }}", operator: "!=", right: "0" }
       arguments: { prompt: hi }
 "#,
     );
@@ -352,8 +356,8 @@ fn compares_with_operators() {
         Operator::Match
             .compare(&ctx, "a", "(")
             .unwrap_err()
-            .internal_message
-            .contains("invalid regex")
+            .translation_key
+            == "regex_invalid"
     );
 }
 
@@ -361,7 +365,7 @@ const LOOP: &str = r#"
     - name: l
       type: loop
       arguments:
-        until: [{ left: "{{ Steps.a.output }}", operator: "~=", right: done }]
+        until: [{ left: "{{ Contexts.c.last().content }}", operator: "~=", right: done }]
         steps:
           - { name: a, context: c, type: agent, arguments: { prompt: hi } }
 "#;
@@ -404,7 +408,7 @@ fn rejects_invalid_loops() {
     assert!(validation_error(&empty).contains("arguments.steps is empty"));
 
     let empty_until = flow_yaml(LOOP).replace(
-        "until: [{ left: \"{{ Steps.a.output }}\", operator: \"~=\", right: done }]",
+        "until: [{ left: \"{{ Contexts.c.last().content }}\", operator: \"~=\", right: done }]",
         "until: []",
     );
     assert!(validation_error(&empty_until).contains("arguments.until is empty"));
@@ -430,4 +434,203 @@ fn checks_names_and_contexts_inside_loops() {
     // `c` is only used inside the loop, which counts.
     let (ctx, _) = support::temp_context();
     parse(&flow_yaml(LOOP)).validate(&ctx).unwrap();
+}
+
+/// `flow_yaml` with `spec.arguments` set to `arguments`, indented by four
+/// spaces.
+fn flow_with_arguments(arguments: &str) -> String {
+    flow_yaml(&format!("    - {}", AGENT)).replace(
+        "  contexts:",
+        &format!("  arguments:\n{}\n  contexts:", arguments),
+    )
+}
+
+#[test]
+fn parses_arguments() {
+    let yaml = flow_with_arguments(
+        r#"    name: { required: true, pattern: "^[a-z]+$" }
+    n: { type: number }
+    f: { type: float }
+    plain: {}"#,
+    );
+    let flow = parse(&yaml);
+    let (ctx, _) = support::temp_context();
+    flow.validate(&ctx).unwrap();
+
+    let arguments = &flow.spec.arguments;
+    assert!(arguments["name"].required);
+    assert_eq!(arguments["name"].type_, ValueType::String);
+    assert_eq!(arguments["n"].type_, ValueType::Number);
+    assert_eq!(arguments["f"].type_, ValueType::Float);
+    assert!(!arguments["plain"].required);
+    assert!(arguments["plain"].pattern.is_none());
+}
+
+#[test]
+fn rejects_invalid_arguments() {
+    assert!(
+        validation_error(&flow_with_arguments("    \"a-b\": {}"))
+            .contains("argument name 'a-b' must match")
+    );
+    assert!(
+        validation_error(&flow_with_arguments("    n: { type: number, pattern: x }"))
+            .contains("argument 'n': pattern is only allowed for type string")
+    );
+    assert!(
+        validation_error_with(
+            &flow_with_arguments("    s: { pattern: \"(\" }"),
+            "regex_invalid"
+        )
+        .contains("argument 's': pattern: invalid regex '('")
+    );
+    parse_error(&flow_with_arguments("    s: { type: bool }"));
+    parse_error(&flow_with_arguments("    s: { default: x }"));
+}
+
+fn with_webhook(arguments: &str, mapping: &str) -> String {
+    flow_with_arguments(arguments).replace(
+        "  steps:",
+        &format!(
+            "  triggers:\n    webhook: {{ name: w, token: t, arguments: {} }}\n  steps:",
+            mapping
+        ),
+    )
+}
+
+#[test]
+fn checks_the_webhook_mapping_against_the_arguments() {
+    let (ctx, _) = support::temp_context();
+    let valid = parse(&with_webhook(
+        "    a: { required: true }\n    b: {}",
+        r#"{ a: "{{ Body.a }}" }"#,
+    ));
+    valid.validate(&ctx).unwrap();
+    assert_eq!(
+        valid.spec.triggers.webhook.as_ref().unwrap().arguments["a"],
+        "{{ Body.a }}"
+    );
+
+    assert!(
+        validation_error(&with_webhook("    a: {}", "{ a: x, b: y }"))
+            .contains("maps unknown argument 'b'")
+    );
+    assert!(
+        validation_error(&with_webhook("    a: { required: true }", "{}"))
+            .contains("does not map required argument 'a'")
+    );
+}
+
+const SET: &str = r#"
+    - name: s
+      type: set
+      arguments:
+        n: { value: "{{ Contexts.c.last().content }}", type: number, extract: "(\\d+)", default: 3 }
+        text: { value: "x" }
+"#;
+
+#[test]
+fn parses_set_and_flow_steps() {
+    let yaml = flow_yaml(&format!(
+        "{}    - {{ name: f, type: flow, arguments: {{ flow: other, arguments: {{ x: \"{{{{ Variables.n }}}}\" }} }} }}\n    - {}",
+        SET, AGENT
+    ));
+    let flow = parse(&yaml);
+    let (ctx, _) = support::temp_context();
+    flow.validate(&ctx).unwrap();
+
+    let Action::Set(set) = &flow.spec.steps[0].action else {
+        panic!("expected set action");
+    };
+    assert_eq!(set.0["n"].type_, ValueType::Number);
+    assert_eq!(set.0["n"].extract.as_deref(), Some("(\\d+)"));
+    assert_eq!(set.0["n"].default, Some(json!(3)));
+    assert_eq!(set.0["text"].type_, ValueType::String);
+
+    let Action::Flow(call) = &flow.spec.steps[1].action else {
+        panic!("expected flow action");
+    };
+    assert_eq!(call.flow, "other");
+    assert_eq!(call.arguments["x"], "{{ Variables.n }}");
+}
+
+#[test]
+fn rejects_invalid_set_steps() {
+    let set = |replace: &str, with: &str| {
+        flow_yaml(&format!("{}    - {}", SET, AGENT)).replace(replace, with)
+    };
+
+    assert!(
+        validation_error(&set("type: set", "type: set\n      context: c"))
+            .contains("step 's': a set step has no context")
+    );
+    assert!(validation_error(&set("text:", "\"a-b\":")).contains("variable name 'a-b' must match"));
+    assert!(
+        validation_error_with(&set("\"(\\\\d+)\"", "\"(\""), "regex_invalid")
+            .contains("variable 'n': extract: invalid regex")
+    );
+    assert!(
+        validation_error(&set("default: 3", "default: abc"))
+            .contains("variable 'n': default \"abc\" is not a number")
+    );
+    assert!(
+        validation_error(&flow_yaml(&format!(
+            "    - {{ name: s, type: set, arguments: {{}} }}\n    - {}",
+            AGENT
+        )))
+        .contains("arguments is empty")
+    );
+    parse_error(&set(
+        "text: { value: \"x\" }",
+        "text: { value: \"x\", other: 1 }",
+    ));
+    parse_error(&set("text: { value: \"x\" }", "text: { type: number }"));
+}
+
+#[test]
+fn rejects_invalid_flow_steps() {
+    let call = |arguments: &str| {
+        flow_yaml(&format!(
+            "    - {{ name: f, type: flow, arguments: {} }}\n    - {}",
+            arguments, AGENT
+        ))
+    };
+
+    assert!(
+        validation_error(&call("{ flow: other }").replace("type: flow", "type: flow, context: c"))
+            .contains("step 'f': a flow step has no context")
+    );
+    assert!(validation_error(&call("{ flow: \"\" }")).contains("arguments.flow is empty"));
+    assert!(
+        validation_error(&call("{ flow: other, arguments: { \"a-b\": x } }"))
+            .contains("argument name 'a-b' must match")
+    );
+    parse_error(&call("{ flow: other, extra: x }"));
+}
+
+#[test]
+fn arguments_are_optional() {
+    let (ctx, _) = support::temp_context();
+    let without = parse(&flow_yaml(&format!("    - {}", AGENT)));
+    without.validate(&ctx).unwrap();
+    assert!(without.spec.arguments.is_empty());
+
+    let empty = parse(&flow_with_arguments(""));
+    empty.validate(&ctx).unwrap();
+    assert!(empty.spec.arguments.is_empty());
+}
+
+#[test]
+fn parses_flow_call_examples() {
+    let (ctx, _) = support::temp_context();
+    let calculate = parse(include_str!("../../../examples/flows/calculate.yaml"));
+    calculate.validate(&ctx).unwrap();
+    assert!(calculate.spec.triggers.webhook.is_none());
+
+    let pythagoras = parse(include_str!("../../../examples/flows/pythagoras.yaml"));
+    pythagoras.validate(&ctx).unwrap();
+    let Action::Flow(call) = &pythagoras.spec.steps[0].action else {
+        panic!("expected flow action");
+    };
+    assert_eq!(call.flow, "calculate");
+    assert!(call.arguments.contains_key("instruction"));
 }

@@ -39,7 +39,7 @@
         },
         "bitbucket_pr_get": {
           "main": "bitbucket_pr_get.js",
-          "description": "Get title, summary and all comments of a pull request.",
+          "description": "Get title, summary and all comments of a pull request, including comment ids and the parent id of replies.",
           "scopes": {
             "fetch": {
               "methods": ["GET"],
@@ -173,6 +173,134 @@
               "destination_branch": {
                 "type": "string",
                 "description": "The name of the branch to merge into."
+              }
+            }
+          }
+        },
+        "bitbucket_pr_update": {
+          "main": "bitbucket_pr_update.js",
+          "description": "Updates the description and optionally the title of a pull request.",
+          "scopes": {
+            "fetch": {
+              "methods": ["PUT"],
+              "urls": ["^https://api.bitbucket.org/.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["workspace", "repository", "id", "description"],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "description": "The Bitbucket workspace."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository slug."
+              },
+              "id": {
+                "type": "integer",
+                "description": "The id of the pull request."
+              },
+              "description": {
+                "type": "string",
+                "description": "The new description of the pull request. Replaces the existing description."
+              },
+              "title": {
+                "type": "string",
+                "description": "An optional new title for the pull request."
+              }
+            }
+          }
+        },
+        "bitbucket_pr_reply": {
+          "main": "bitbucket_pr_reply.js",
+          "description": "Replies to an existing comment on a pull request. Use bitbucket_pr_get to find the comment id.",
+          "scopes": {
+            "fetch": {
+              "methods": ["POST"],
+              "urls": ["^https://api.bitbucket.org/.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["workspace", "repository", "id", "comment_id", "comment"],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "description": "The Bitbucket workspace."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository slug."
+              },
+              "id": {
+                "type": "integer",
+                "description": "The id of the pull request."
+              },
+              "comment_id": {
+                "type": "integer",
+                "description": "The id of the comment to reply to."
+              },
+              "comment": {
+                "type": "string",
+                "description": "The reply text."
+              }
+            }
+          }
+        },
+        "bitbucket_pr_approve": {
+          "main": "bitbucket_pr_approve.js",
+          "description": "Approves a pull request.",
+          "scopes": {
+            "fetch": {
+              "methods": ["POST"],
+              "urls": ["^https://api.bitbucket.org/.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["workspace", "repository", "id"],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "description": "The Bitbucket workspace."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository slug."
+              },
+              "id": {
+                "type": "integer",
+                "description": "The id of the pull request."
+              }
+            }
+          }
+        },
+        "bitbucket_pr_decline": {
+          "main": "bitbucket_pr_decline.js",
+          "description": "Declines a pull request.",
+          "scopes": {
+            "fetch": {
+              "methods": ["POST"],
+              "urls": ["^https://api.bitbucket.org/.*$"]
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["workspace", "repository", "id"],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "description": "The Bitbucket workspace."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository slug."
+              },
+              "id": {
+                "type": "integer",
+                "description": "The id of the pull request."
               }
             }
           }

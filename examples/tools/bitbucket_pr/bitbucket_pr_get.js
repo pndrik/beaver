@@ -12,15 +12,20 @@ async function main(input, configuration, tool_permissions) {
   }
 
   let comments = await client.showAllPullRequestComments(input.repository, input.id);
-  if (!comments.values || !Array.isArray(comments.values)) {
+  if (!Array.isArray(comments)) {
     throw new Error('Did not receive a valid response from Bitbucket API when fetching pull request comments');
   }
 
-  let comments_sanitized = comments.values.map(c => {
+  let comments_sanitized = comments.map(c => {
     let comment = {
+      id: c.id,
       content: c.content.raw,
       user: c.user.display_name,
     };
+
+    if (c.parent && typeof c.parent.id === 'number') {
+      comment.parent = c.parent.id;
+    }
 
     if (c.inline && c.path && c.inline.to) {
       comment.line = c.inline.to;

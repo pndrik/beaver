@@ -1,50 +1,64 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::path::PathBuf;
+use std::sync::Arc;
 
-use serde_json::Value;
-
-use super::{RunContext, chroot};
+use super::chroot;
 use crate::{
     core::models::{AppContext, AppError},
-    flows::{Flows, models::Context},
+    flows::{
+        Flows,
+        models::{FlowRun, RunContext},
+    },
     inference::Inference,
     tools::Tools,
 };
 
 impl Flows {
-    pub(super) async fn context(
+    pub(super) async fn contexts(
         &self,
         ctx: &AppContext,
-        declaration: &Context,
-        values: &Value,
         inference: &Inference,
         tools: &Tools,
-        delete_on_finish: &mut Vec<PathBuf>,
-    ) -> Result<RunContext, AppError> {
-        let chroot = match &declaration.chroot {
-            Some(declared) => {
-                let path = self
-                    .template_engine
-                    .render(ctx, &declared.path, values)
-                    .await?;
-                let chroot = chroot::prepare(ctx, &path, declared.create, declared.delete).await?;
-                if declared.delete && !delete_on_finish.contains(&chroot) {
-                    delete_on_finish.push(chroot.clone());
+        run: &mut FlowRun,
+    ) -> Result<(), AppError> {
+        let flow = Arc::clone(&run.flow);
+        let values = run.template_values(ctx);
+
+        for (name, declaration) in &flow.spec.contexts {
+            let failed = |mut err: AppError| {
+                err.internal_message = format!(
+                    "Flow '{}' context '{}' failed: {}",
+                    flow.metadata.name, name, err.internal_message
+                );
+                err
+            };
+
+            let chroot = match &declaration.chroot {
+                Some(declared) => {
+                    let path = self
+                        .template_engine
+                        .render(ctx, &declared.path, &values)
+                        .await
+                        .map_err(failed)?;
+                    let chroot = chroot::prepare(ctx, &path, declared.create, declared.delete)
+                        .await
+                        .map_err(failed)?;
+                    if declared.delete {
+                        run.delete_when_finished(chroot.clone());
+                    }
+                    chroot
                 }
-                chroot
-            }
-            None => chroot::global_chroot(ctx).await?,
-        };
+                None => chroot::global_chroot(ctx).await.map_err(failed)?,
+            };
 
-        let conversation = inference
-            .new_conversation(ctx, &declaration.agent, tools, &chroot.to_string_lossy())
-            .await?;
-
-        Ok(RunContext {
-            chroot,
-            conversation,
-        })
+            let conversation = inference
+                .new_conversation(ctx, &declaration.agent, tools, &chroot.to_string_lossy())
+                .await
+                .map_err(failed)?;
+            run.contexts
+                .insert(name.clone(), RunContext { conversation });
+        }
+        Ok(())
     }
 }

@@ -5,11 +5,14 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use super::{RunContext, values};
+use super::values;
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
-    flows::{Flows, models::ArgumentsTool},
+    flows::{
+        Flows,
+        models::{Action, FlowRun, Step},
+    },
     inference::models::Message,
     tools::{
         Tools,
@@ -21,16 +24,19 @@ impl Flows {
     pub(super) async fn tool(
         &self,
         ctx: &AppContext,
-        context: &mut RunContext,
-        arguments: &ArgumentsTool,
-        values: &Value,
+        step: &Step,
         tools: &Tools,
-    ) -> Result<String, AppError> {
+        run: &mut FlowRun,
+    ) -> Result<(), AppError> {
+        let Action::Tool(arguments) = &step.action else {
+            unreachable!("tool runs tool steps")
+        };
+        let values = run.template_values(ctx);
         let rendered = values::render_arguments(
             self.template_engine.as_ref(),
             ctx,
             &arguments.arguments,
-            values,
+            &values,
         )
         .await?;
         let call_arguments: HashMap<String, CallValue> = match rendered {
@@ -50,11 +56,12 @@ impl Flows {
             name: arguments.tool.clone(),
             scopes: arguments.scopes.clone(),
         };
+        let conversation = &mut run.context_mut(step).conversation;
         let output = tools
-            .execute_direct(ctx, &mut context.conversation, permissions, &call)
+            .execute_direct(ctx, conversation, permissions, &call)
             .await?;
 
-        context.conversation.insert_message(
+        conversation.insert_message(
             Message::tool(
                 format!(
                     "Name: {}\nArguments: {}\nResult: \n{}",
@@ -62,11 +69,11 @@ impl Flows {
                     call.arguments_as_json(),
                     output
                 ),
-                context.conversation.agent(),
+                conversation.agent(),
             ),
             None,
         );
 
-        Ok(output)
+        Ok(())
     }
 }

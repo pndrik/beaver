@@ -4,12 +4,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
-use super::{Action, Context, Step, Triggers, identifier, invalid, within};
+use super::{Action, Argument, Context, Step, Triggers, identifier, invalid, within};
 use crate::core::models::{AppContext, AppError};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
+    #[serde(default)]
+    pub arguments: BTreeMap<String, Argument>,
     #[serde(default)]
     pub contexts: BTreeMap<String, Context>,
     #[serde(default)]
@@ -30,7 +32,14 @@ impl Spec {
                 .map_err(|err| within(&format!("context '{}'", name), err))?;
         }
 
-        self.triggers.validate(ctx)?;
+        for (name, argument) in &self.arguments {
+            identifier(ctx, "argument", name)?;
+            argument
+                .validate(ctx)
+                .map_err(|err| within(&format!("argument '{}'", name), err))?;
+        }
+
+        self.triggers.validate(ctx, &self.arguments)?;
 
         let mut step_names = HashSet::new();
         let mut used_contexts = HashSet::new();

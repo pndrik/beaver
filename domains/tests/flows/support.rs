@@ -56,12 +56,17 @@ pub struct Fixture {
     pub scripted: Arc<Scripted>,
 }
 
-/// Knows the agent `coder`, answers with the scripted provider and offers the
+/// Knows the agents `coder`, `calculator` and `dispatcher` (as used by the
+/// examples), answers with the scripted provider and offers the
 /// `echo` and `fail` tools.
 pub fn fixture(ctx: &AppContext, flows: Vec<Definition>) -> Fixture {
     let scripted = Arc::new(Scripted::new());
     let inference = Inference::new(
-        Arc::new(agent::Memory::new(vec![agent("coder")])),
+        Arc::new(agent::Memory::new(vec![
+            agent("coder"),
+            agent("calculator"),
+            agent("dispatcher"),
+        ])),
         vec![scripted.clone()],
     )
     .unwrap();

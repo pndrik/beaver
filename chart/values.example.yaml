@@ -19,6 +19,8 @@ configuration:
     configuration:
       js_bitbucket_pr:
         api_key: "<your_bitbucket_api_key>"
+      js_slack:
+        api_key: "<your_slack_token>"
       git:
         repositories:
           - url: "^ssh://git@bitbucket.org:example/.*$"
@@ -59,6 +61,13 @@ flows:
       display_name: PR Review Flow
       description: Checks out the pull request in a temporary directory and reviews it with the full code base at hand.
     spec:
+      arguments:
+        repository: { required: true, pattern: "^[\\w.-]+/[\\w.-]+$" }
+        branch: { required: true }
+        workspace: {}
+        repository_name: {}
+        pull_request: { type: number, required: true }
+        title: {}
       contexts:
         review:
           agent: reviewer
@@ -70,6 +79,13 @@ flows:
         webhook:
           name: pr_review_flow
           token: "REPLACE_WITH_YOUR_FLOW_TOKEN"
+          arguments:
+            repository: "{{ Body.repository.full_name }}"
+            branch: "{{ Body.pullrequest.source.branch.name }}"
+            workspace: "{{ Body.repository.workspace.slug }}"
+            repository_name: "{{ Body.repository.name }}"
+            pull_request: "{{ Body.pullrequest.id }}"
+            title: "{{ Body.pullrequest.title }}"
       steps:
         - name: clone
           context: review
@@ -77,7 +93,7 @@ flows:
           arguments:
             tool: git_clone
             arguments:
-              url: "ssh://git@bitbucket.org:{{ Body.repository.full_name }}.git"
+              url: "ssh://git@bitbucket.org:{{ Arguments.repository }}.git"
               path: "/repo"
         - name: checkout
           context: review
@@ -86,7 +102,7 @@ flows:
             tool: git_checkout
             arguments:
               path: "/repo"
-              branch: "{{ Body.pullrequest.source.branch.name }}"
+              branch: "{{ Arguments.branch }}"
         - name: review
           context: review
           type: agent
@@ -95,7 +111,7 @@ flows:
               The pull request branch is checked out in /repo, use the file tools to read the surrounding code.
               Review the changes and provide your feedback as comments on the pull request.
 
-              Workspace: {{ Body.repository.workspace.slug }}
-              Repository: {{ Body.repository.name }}
-              Pull request id: {{ Body.pullrequest.id }}
-              Title: {{ Body.pullrequest.title }}
+              Workspace: {{ Arguments.workspace }}
+              Repository: {{ Arguments.repository_name }}
+              Pull request id: {{ Arguments.pull_request }}
+              Title: {{ Arguments.title }}

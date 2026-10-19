@@ -8,6 +8,8 @@ metadata:
   display_name: Double Check
   description: Agent A hands a number to agent B to double, then verifies B's answer.
 spec:
+  arguments:
+    secret_number: { type: number, required: true }
   contexts:
     dispatcher:
       agent: dispatcher
@@ -25,13 +27,15 @@ spec:
     webhook:
       name: double_check
       token: "REPLACE_ME"
+      arguments:
+        secret_number: "{{ Body.secret_number }}"
   steps:
     - name: brief
       context: dispatcher
       type: agent
       arguments:
         prompt: |
-          We received this payload: {"secret_number": {{ Body.secret_number }}}
+          The secret number is {{ Arguments.secret_number }}.
 
           Write the message for the next agent. It must contain the secret number,
           the instruction to double it, and the instruction to reply with the
@@ -42,7 +46,12 @@ spec:
       context: calculator
       type: agent
       arguments:
-        prompt: "{{ Steps.brief.output }}"
+        prompt: "{{ Contexts.dispatcher.last().content }}"
+
+    - name: answer
+      type: set
+      arguments:
+        doubled: { value: "{{ Contexts.calculator.last().content }}", type: number, extract: "(-?\\d+)" }
 
     - name: verify
       context: dispatcher
@@ -51,7 +60,9 @@ spec:
         prompt: |
           The other agent answered:
 
-          {{ Steps.compute.output }}
+          {{ Contexts.calculator.last().content }}
+
+          The first number in that answer is {{ Variables.doubled }}.
 
           Verify whether the job was done correctly: the answer must be exactly
           double the secret number, and it must not reveal the secret number
