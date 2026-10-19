@@ -73,6 +73,19 @@ class SlackClient {
     return this.request('conversations.history', 'GET', { channel, limit, oldest, latest });
   }
 
+  listConversations({ types = 'public_channel', cursor, limit = 1000 } = {}) {
+    if (typeof limit !== 'number' || limit < 1 || limit > 1000) {
+      throw new Error('Limit must be a number between 1 and 1000');
+    }
+
+    return this.request('conversations.list', 'GET', {
+      types,
+      cursor,
+      limit,
+      exclude_archived: true,
+    });
+  }
+
   replies(channel, ts, limit = 50) {
     if (!channel || typeof channel !== 'string') {
       throw new Error('Channel is required and must be a string');

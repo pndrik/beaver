@@ -12,10 +12,9 @@
           "main": "bitbucket_pr_list.js",
           "description": "Lists pull requests from a Bitbucket repository.",
           "scopes": {
-            "fetch": {
-              "methods": ["GET"],
-              "urls": ["^https://api.bitbucket.org/.*$"]
-            }
+            "fetch": [
+              { "url": "^https://api\\.bitbucket\\.org/.*$", "methods": ["GET"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -41,10 +40,9 @@
           "main": "bitbucket_pr_get.js",
           "description": "Get title, summary and all comments of a pull request, including comment ids and the parent id of replies.",
           "scopes": {
-            "fetch": {
-              "methods": ["GET"],
-              "urls": ["^https://api.bitbucket.org/.*$"]
-            }
+            "fetch": [
+              { "url": "^https://api\\.bitbucket\\.org/.*$", "methods": ["GET"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -69,10 +67,9 @@
           "main": "bitbucket_pr_diff.js",
           "description": "Fetches the diff of a pull request from Bitbucket.",
           "scopes": {
-            "fetch": {
-              "methods": ["GET"],
-              "urls": ["^https://api.bitbucket.org/.*$"]
-            }
+            "fetch": [
+              { "url": "^https://api\\.bitbucket\\.org/.*$", "methods": ["GET"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -97,10 +94,9 @@
           "main": "bitbucket_pr_comment.js",
           "description": "Adds a comment to a pull request from Bitbucket.",
           "scopes": {
-            "fetch": {
-              "methods": ["POST"],
-              "urls": ["^https://api.bitbucket.org/.*$"]
-            }
+            "fetch": [
+              { "url": "^https://api\\.bitbucket\\.org/.*$", "methods": ["POST"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -141,10 +137,9 @@
           "main": "bitbucket_pr_create.js",
           "description": "Creates a pull request on a Bitbucket repository.",
           "scopes": {
-            "fetch": {
-              "methods": ["GET", "POST"],
-              "urls": ["^https://api.bitbucket.org/.*$"]
-            }
+            "fetch": [
+              { "url": "^https://api\\.bitbucket\\.org/.*$", "methods": ["GET", "POST"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -181,10 +176,9 @@
           "main": "bitbucket_pr_update.js",
           "description": "Updates the description and optionally the title of a pull request.",
           "scopes": {
-            "fetch": {
-              "methods": ["PUT"],
-              "urls": ["^https://api.bitbucket.org/.*$"]
-            }
+            "fetch": [
+              { "url": "^https://api\\.bitbucket\\.org/.*$", "methods": ["PUT"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -217,10 +211,9 @@
           "main": "bitbucket_pr_reply.js",
           "description": "Replies to an existing comment on a pull request. Use bitbucket_pr_get to find the comment id.",
           "scopes": {
-            "fetch": {
-              "methods": ["POST"],
-              "urls": ["^https://api.bitbucket.org/.*$"]
-            }
+            "fetch": [
+              { "url": "^https://api\\.bitbucket\\.org/.*$", "methods": ["POST"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -253,10 +246,9 @@
           "main": "bitbucket_pr_approve.js",
           "description": "Approves a pull request.",
           "scopes": {
-            "fetch": {
-              "methods": ["POST"],
-              "urls": ["^https://api.bitbucket.org/.*$"]
-            }
+            "fetch": [
+              { "url": "^https://api\\.bitbucket\\.org/.*$", "methods": ["POST"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -281,10 +273,9 @@
           "main": "bitbucket_pr_decline.js",
           "description": "Declines a pull request.",
           "scopes": {
-            "fetch": {
-              "methods": ["POST"],
-              "urls": ["^https://api.bitbucket.org/.*$"]
-            }
+            "fetch": [
+              { "url": "^https://api\\.bitbucket\\.org/.*$", "methods": ["POST"] }
+            ]
           },
           "parameters": {
             "type": "object",

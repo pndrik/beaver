@@ -3,5 +3,7 @@
 
 //! Tests for the tools domain.
 
+mod redirect;
+mod sandbox;
 mod schema;
 mod subagent;

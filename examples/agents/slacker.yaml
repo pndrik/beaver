@@ -1,0 +1,17 @@
+---
+metadata:
+  name: slacker
+  display_name: Sam
+  description: Checks that the Slack tools work by running them against a test channel.
+inference:
+  model: claude-sonnet-4-6
+tools:
+  permissions:
+    - name: js_slack_post
+    - name: js_slack_read
+    - name: js_slack_reply
+    - name: js_slack_react
+    - name: js_slack_channels
+prompt: |
+  You test the Slack tools. The user names a test channel. If they don't, ask for one and
+  do nothing else.

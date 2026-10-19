@@ -1,16 +1,15 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::collections::HashMap;
+use serde_json::{Value, json};
 
 use super::{
-    CONFIGURATION_SKILL_CONFIGURATION, CONFIGURATION_SKILLS_DIR, JavascriptProvider, file,
-    javascript::Value, models,
+    CONFIGURATION_SKILL_CONFIGURATION, CONFIGURATION_SKILLS_DIR, JavascriptProvider, file, models,
 };
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
-    tools::models::{Call, ToolPermission},
+    tools::models::ToolPermission,
 };
 
 impl JavascriptProvider {
@@ -41,30 +40,8 @@ impl JavascriptProvider {
         Ok(config)
     }
 
-    pub(super) fn input_to_value(&self, input: &Call) -> Value {
-        Value::Map(
-            input
-                .arguments
-                .iter()
-                .map(|(k, v)| (k.clone(), Value::new_from_call_value(v)))
-                .collect::<HashMap<String, Value>>(),
-        )
-    }
-
     pub(super) fn permission_to_value(&self, permission: &ToolPermission) -> Value {
-        Value::Map(HashMap::from_iter(vec![
-            ("name".to_string(), Value::String(permission.name.clone())),
-            (
-                "scopes".to_string(),
-                Value::List(
-                    permission
-                        .scopes
-                        .iter()
-                        .map(|s| Value::String(s.clone()))
-                        .collect(),
-                ),
-            ),
-        ]))
+        json!({ "name": permission.name, "scopes": permission.scopes })
     }
 
     pub(super) async fn get_tool_configuration(
@@ -72,23 +49,15 @@ impl JavascriptProvider {
         ctx: &AppContext,
         name: &str,
     ) -> Result<Value, AppError> {
-        let tool_configuration = match ctx
+        let tool_configuration = ctx
             .configuration
             .get_map(
                 ctx,
                 &format!("{}.js_{}", CONFIGURATION_SKILL_CONFIGURATION, name),
             )
             .await
-        {
-            Ok(config) => config,
-            Err(_) => HashMap::new(),
-        };
+            .unwrap_or_default();
 
-        Ok(Value::Map(
-            tool_configuration
-                .iter()
-                .map(|(k, v)| (k.clone(), Value::String(v.clone())))
-                .collect::<HashMap<String, Value>>(),
-        ))
+        Ok(json!(tool_configuration))
     }
 }

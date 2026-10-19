@@ -18,7 +18,7 @@ use app_domains::{
 const NAME: &str = "git_diff";
 const DESCRIPTION: &str = "Shows a diff in an existing local repository: unstaged changes against the index when 'from' and 'to' are omitted, or the diff between two revisions (commit SHAs, branch names, tags, HEAD~N, etc.) when both are given.";
 
-const MAX_DIFF_LINES: usize = 1000;
+const MAX_DIFF_LINES: usize = 5000;
 
 #[derive(Debug, Deserialize)]
 struct Arguments {
@@ -146,16 +146,6 @@ impl Tool for Diff {
             ));
         }
 
-        let lines: Vec<&str> = diff.lines().collect();
-        if lines.len() > MAX_DIFF_LINES {
-            let truncated = lines[..MAX_DIFF_LINES].join("\n");
-            Ok(format!(
-                "{}\n... (truncated, {} more lines)",
-                truncated,
-                lines.len() - MAX_DIFF_LINES
-            ))
-        } else {
-            Ok(diff)
-        }
+        Ok(super::truncate_lines(diff, MAX_DIFF_LINES))
     }
 }

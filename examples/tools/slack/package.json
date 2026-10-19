@@ -12,10 +12,9 @@
           "main": "slack_search.js",
           "description": "Searches Slack messages using Slack search syntax (e.g. 'deploy in:#ops from:@alice after:2026-01-01'). Returns the most recent matches first unless sort or sort_dir say otherwise. Requires a user token (xoxp-) with the search:read scope.",
           "scopes": {
-            "fetch": {
-              "methods": ["GET"],
-              "urls": ["^https://slack\\.com/api/search\\.messages\\?.*$"]
-            }
+            "fetch": [
+              { "url": "^https://slack\\.com/api/search\\.messages\\?.*$", "methods": ["GET"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -42,14 +41,39 @@
             }
           }
         },
+        "slack_channels": {
+          "main": "slack_channels.js",
+          "description": "Lists channels the token is a member of, optionally filtered by name, topic or purpose. Exact name matches come first. Returns id, name, is_private, members, topic and whether there are more. Requires the channels:read scope, and groups:read for private channels.",
+          "scopes": {
+            "fetch": [
+              { "url": "^https://slack\\.com/api/conversations\\.list\\?.*$", "methods": ["GET"] }
+            ]
+          },
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Case-insensitive text to find in the channel name, topic or purpose. A channel name, with or without '#', resolves it to its id."
+              },
+              "include_private": {
+                "type": "boolean",
+                "description": "Also list private channels the token can see."
+              },
+              "limit": {
+                "type": "integer",
+                "description": "The maximum number of channels to return (1-200, default 50)."
+              }
+            }
+          }
+        },
         "slack_read": {
           "main": "slack_read.js",
           "description": "Reads recent messages from a Slack channel, or all messages of a thread if thread_ts is given. Requires the channels:history (and groups:history for private channels) scope.",
           "scopes": {
-            "fetch": {
-              "methods": ["GET"],
-              "urls": ["^https://slack\\.com/api/conversations\\.(history|replies)\\?.*$"]
-            }
+            "fetch": [
+              { "url": "^https://slack\\.com/api/conversations\\.(history|replies)\\?.*$", "methods": ["GET"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -82,10 +106,9 @@
           "main": "slack_post.js",
           "description": "Posts a new message to a Slack channel. Returns the channel and the message timestamp (ts), which can be used as thread_ts to start a thread. Requires the chat:write scope.",
           "scopes": {
-            "fetch": {
-              "methods": ["POST"],
-              "urls": ["^https://slack\\.com/api/chat\\.postMessage$"]
-            }
+            "fetch": [
+              { "url": "https://slack.com/api/chat.postMessage", "methods": ["POST"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -106,10 +129,9 @@
           "main": "slack_reply.js",
           "description": "Replies in the thread of a Slack message. Starts a new thread if the message has none yet. Requires the chat:write scope.",
           "scopes": {
-            "fetch": {
-              "methods": ["POST"],
-              "urls": ["^https://slack\\.com/api/chat\\.postMessage$"]
-            }
+            "fetch": [
+              { "url": "https://slack.com/api/chat.postMessage", "methods": ["POST"] }
+            ]
           },
           "parameters": {
             "type": "object",
@@ -138,10 +160,9 @@
           "main": "slack_react.js",
           "description": "Adds an emoji reaction to a Slack message. Requires the reactions:write scope.",
           "scopes": {
-            "fetch": {
-              "methods": ["POST"],
-              "urls": ["^https://slack\\.com/api/reactions\\.add$"]
-            }
+            "fetch": [
+              { "url": "https://slack.com/api/reactions.add", "methods": ["POST"] }
+            ]
           },
           "parameters": {
             "type": "object",

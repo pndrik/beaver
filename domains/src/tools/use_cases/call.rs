@@ -14,7 +14,7 @@ use crate::{
         Tools,
         models::{Call, Tool, ToolPermission, ToolsConfiguration},
         traits::ToolsProvider,
-        use_cases::subagent,
+        use_cases::{redirect, subagent},
     },
 };
 
@@ -72,6 +72,54 @@ impl Tools {
         }
 
         None
+    }
+
+    async fn call_provider(
+        &self,
+        ctx: &AppContext,
+        conversation: &mut Conversation,
+        provider: Arc<dyn ToolsProvider + Send + Sync>,
+        tool: Tool,
+        permissions: ToolPermission,
+        call: &Call,
+    ) -> Result<String, AppError> {
+        let (call, target) = match redirect::defines_redirect(&tool) {
+            true => (call.clone(), None),
+            false => redirect::take_redirect(call),
+        };
+
+        if target.is_some() && !conversation.agent().tools.redirect_output {
+            return Err(app_error!(
+                Validation,
+                "access_violation",
+                "Output redirection is not enabled for this agent",
+                ctx.clone()
+            ));
+        }
+
+        if !call.validate_arguments(tool.schema) {
+            return Err(app_error!(
+                Validation,
+                "tool_arguments_invalid",
+                "Arguments for tool are invalid please check schema",
+                ctx.clone()
+            ));
+        }
+
+        let Some(target) = target else {
+            return provider
+                .execute(ctx, conversation, permissions, &call)
+                .await;
+        };
+
+        conversation.get_new_path(ctx, &target)?;
+        let output = provider
+            .execute(ctx, conversation, permissions, &call)
+            .await?;
+        let path = conversation.get_new_path(ctx, &target)?;
+        self.output_writer.write(ctx, &path, &output).await?;
+
+        Ok(redirect::receipt(&target, &output))
     }
 
     /// Runs a provider tool outside of inference, e.g. for flow steps. The caller
@@ -152,19 +200,10 @@ impl Tools {
             };
 
         if let Some((provider, tool)) = self.find_provider(ctx, &call.name).await {
-            if !call.validate_arguments(tool.schema) {
-                add_tool_message_to_conversation(
-                    ctx,
-                    conversation,
-                    call,
-                    "Error",
-                    "Arguments for tool are invalid please check schema",
-                )
-                .await?;
-                return Ok(());
-            }
-
-            match provider.execute(ctx, conversation, permissions, call).await {
+            let result = self
+                .call_provider(ctx, conversation, provider, tool, permissions, call)
+                .await;
+            match result {
                 Ok(res) => {
                     add_tool_message_to_conversation(ctx, conversation, call, "Result", &res)
                         .await?

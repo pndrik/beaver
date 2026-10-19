@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use super::Repository;
 
 mod helpers;
+mod history;
 
 #[cfg(test)]
 mod tests;
@@ -25,6 +26,21 @@ impl GitRepository {
             path: PathBuf::from(path),
             repository,
         }
+    }
+
+    pub fn local(path: &str) -> Self {
+        Self::new(
+            Repository {
+                url: String::new(),
+                email: String::new(),
+                display_name: None,
+                username: None,
+                ssh_key: None,
+                password: None,
+                known_hosts: vec![],
+            },
+            path,
+        )
     }
 
     pub fn clone(&self) -> Result<(), Error> {

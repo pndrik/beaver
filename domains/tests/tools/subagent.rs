@@ -5,6 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use app_adapters::{
     agent, configuration::ConfigurationMap, inference::Scripted, logger::LoggerRecording,
+    tools::output_writer,
 };
 use app_domains::{
     core::models::AppContext,
@@ -68,7 +69,7 @@ async fn fixture() -> Fixture {
         vec![scripted.clone()],
     )
     .unwrap();
-    let tools = Tools::new(vec![]).unwrap();
+    let tools = Tools::new(vec![], Arc::new(output_writer::Memory::new())).unwrap();
     let conversation = inference
         .new_conversation(&ctx, "parent", &tools, &chroot.path().to_string_lossy())
         .await

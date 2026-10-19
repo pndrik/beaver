@@ -43,3 +43,6 @@ tools:
       base_url: "https://slack.com"
     git:
       repositories: []
+    javascript:
+      loop_iteration_limit: 100000000
+      recursion_limit: 512

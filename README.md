@@ -144,6 +144,40 @@ Webhook argument mappings instead see `Body`, `Query`, `Ctx` and `Flow`.
 
 A missing value, at any depth, renders as `<NULL>` and logs a warning naming the path; the flow keeps running. `is defined`, `default(...)` and `{% if %}` still see it as undefined, so `{{ Arguments.title | default("untitled") }}` works as expected. `.last()` on an empty list is undefined too. Syntax errors fail the step.
 
+## Working with large data
+
+Tool outputs land in the conversation and use up the context window. Two features keep large data out of it.
+
+**Output redirection.** With `tools.redirect_output: true` in an agent, every provider tool it is offered gets an optional `redirect_to_file` argument. The full output is written to that absolute path in the chroot, replacing the file, and the conversation only gets a receipt: `Output written to '/out/prs.json' (48213 bytes, 912 lines)`. The tool message still shows the name and all arguments. The parent directory must exist, and the path must not contain `..` or lead outside the chroot through a symlink. A failing tool writes nothing. Tools that define their own `redirect_to_file`, subagent tools and flow `tool` steps are not redirected. Without `redirect_output`, using the argument fails.
+
+**`javascript_run`.** An embedded tool that runs JavaScript the agent writes, so it can filter and aggregate data in code. Pass exactly one of:
+
+- `code`: runs as the body of an async function, so `await` and `return` work at the top level. Modules load with `await import("/lib/x.js")`.
+- `path`: runs a `.js` file of the chroot as an ES module, so static `import` works. The default export is the result; a function is called and awaited. Boa can't parse `export default async () => …`, use `export default async function () { … }`.
+
+The result is every `console.*` call as a line, followed by the value: strings as they are, nothing for `undefined`, JSON otherwise. A throw or rejection fails the tool with the console output so far. Scripts see the chroot as `/`:
+
+| Global | Description |
+| --- | --- |
+| `fs.readFile(path)` | Content of a file as a string. |
+| `fs.readDir(path)` | Entry names, directories end with `/`. |
+| `fs.writeFile(path, content)`, `fs.appendFile(path, content)` | Replace or append to a file, the parent directory must exist. |
+| `fetch(url, options)` | Only defined if the permission has `web:` scopes. |
+
+Imports only resolve to files in the chroot: absolute specifiers start at its root, relative ones at the importing module, packages (`"lodash"`) can't be imported. Paths that escape the chroot, through `..` or symlinks, throw.
+
+Web access is off by default. Each `web:<regex>` scope of the `javascript_run` permission allows any method on URLs the regex matches (as written, anchor it yourself). Redirects are checked against the same regexes. Other scopes are ignored and an invalid regex fails the tool.
+
+```yaml
+tools:
+  redirect_output: true
+  permissions:
+    - name: javascript_run
+      scopes: ['web:^https://api\.github\.com/']
+```
+
+Scripts are stopped after `tools.configuration.javascript.loop_iteration_limit` loop iterations (default `100000000`) or at `recursion_limit` nested calls (default `512`). Boa has no timeout, so a script blocked in a single long operation runs until it finishes. See [`examples/agents/analyst.yaml`](examples/agents/analyst.yaml).
+
 ## Helm Chart
 
 The chart in [`chart/`](chart) deploys the webhook server as a Deployment + Service (with an optional Ingress and HPA). Your `configuration.yaml`, agents, and flows are supplied as Helm values and rendered into Kubernetes Secrets that get mounted into the pod; changing them triggers a rollout.
@@ -170,7 +204,21 @@ The AI tools out there are powerful but many of them are scary dangerous. With B
 
 - **Explicit allow-listing** — an agent can only call tools listed in its own `permissions.tools`; nothing is available by default.
 - **Chroot-confined** — the embedded tools resolve every path against a configured `chroot` and reject anything outside it.
-- **Scoped JavaScript tools** — each JS tool declares the HTTP methods and URL patterns it's allowed to call in its `package.json` (see [`examples/tools/bitbucket_pr/package.json`](examples/tools/bitbucket_pr/package.json) or [`examples/tools/slack/package.json`](examples/tools/slack/package.json)); calls outside that scope are rejected.
+- **Confined scripts** — `javascript_run` only reads, writes and imports files inside the chroot and has no `fetch` unless its permission has `web:<regex>` scopes.
+- **Scoped JavaScript tools** — each JS tool declares in its `package.json` what it may access (see [`examples/tools/bitbucket_pr/package.json`](examples/tools/bitbucket_pr/package.json) or [`examples/tools/slack/package.json`](examples/tools/slack/package.json)); everything else is rejected, and without scopes a tool has neither `fetch` nor `fs`. Tools only import modules from their own directory, and file access is always confined to the calling agent's chroot:
+
+  ```json
+  "scopes": {
+    "fetch": [
+      { "url": "^https://api\\.example\\.com/.*$", "methods": ["GET", "POST"] }
+    ],
+    "filesystem": [
+      { "path": "/reports", "operations": ["read", "write"] }
+    ]
+  }
+  ```
+
+  A `url` or `path` starting with `^` is a regex, otherwise a literal; a literal path also covers everything below it. Without `methods` any method is allowed. `fs` offers the same functions as in [`javascript_run`](#working-with-large-data), with paths in the chroot. `javascript_run` itself may read and write the whole chroot.
 
 ## Architecture
 

@@ -284,6 +284,7 @@ class BitbucketClient {
 
     return this.request(`/2.0/repositories/${this.workspace}/${repository}/pullrequests/${id}/approve`, {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 
@@ -297,6 +298,7 @@ class BitbucketClient {
 
     return this.request(`/2.0/repositories/${this.workspace}/${repository}/pullrequests/${id}/decline`, {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 }

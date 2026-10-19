@@ -4,8 +4,13 @@
 use std::sync::Arc;
 
 use app_adapters::{
-    agent, configuration::ConfigurationMap, flows, inference::Scripted, logger::LoggerRecording,
-    template_engine::MiniJinjaTemplateEngine, tools::provider::EchoProvider,
+    agent,
+    configuration::ConfigurationMap,
+    flows,
+    inference::Scripted,
+    logger::LoggerRecording,
+    template_engine::MiniJinjaTemplateEngine,
+    tools::{output_writer, provider::EchoProvider},
 };
 use app_domains::{
     core::models::AppContext,
@@ -75,7 +80,11 @@ pub fn fixture(ctx: &AppContext, flows: Vec<Definition>) -> Fixture {
         Arc::new(MiniJinjaTemplateEngine::new(ctx)),
     )
     .unwrap();
-    let tools = Tools::new(vec![Arc::new(EchoProvider::new(ctx))]).unwrap();
+    let tools = Tools::new(
+        vec![Arc::new(EchoProvider::new(ctx))],
+        Arc::new(output_writer::Memory::new()),
+    )
+    .unwrap();
 
     Fixture {
         flows,

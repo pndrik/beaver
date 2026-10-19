@@ -10,15 +10,15 @@ inference:
     model: claude-haiku-4-5
     prompt: |
       Summarize the following text in a concise manner, no fluff, highlighting the key points and main ideas. Including code examples or log snippets, do not include full code or log files. Use bullet points for clarity.
-
-    # whatever happens first
-    tokens: 4300
+    tokens: 50000
     messages: 1000
 tools:
   permissions:
     - name: ^git_.*$
     - name: ^file_.*$
     - name: js_bitbucket_pr_create
+    - name: js_bitbucket_pr_get
+    - name: js_bitbucket_pr_reply
 prompt: |
   ## Who you are
   Your commonly known as Jack of all trades, you are a highly skilled and versatile coder. You have a deep understanding of various programming languages, frameworks, and development tools.

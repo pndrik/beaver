@@ -38,6 +38,8 @@ impl Git {
                 Box::new(tools::Commit),
                 Box::new(tools::Push),
                 Box::new(tools::Diff),
+                Box::new(tools::Log),
+                Box::new(tools::Show),
                 Box::new(tools::BranchDelete),
                 Box::new(tools::Branches),
             ],

@@ -7,7 +7,7 @@ use crate::{
         Inference,
         models::{Conversation, Message},
     },
-    tools::{Tools, models::Tool},
+    tools::Tools,
 };
 
 const PROMPT: &str = include_str!("prompt.md");
@@ -22,18 +22,12 @@ impl Inference {
     ) -> Result<Conversation, AppError> {
         let agent = self.agent_provider.get(ctx, agent_name).await?;
 
-        let tools_filtered = tools
-            .list_all(ctx)
-            .await?
-            .iter()
-            .filter(|s| agent.tools.has_tool_permission(&s.name))
-            .cloned()
-            .collect::<Vec<Tool>>();
+        let tools_permitted = tools.list_permitted(ctx, &agent.tools).await?;
 
         let system_prompt = Message::system(
             PROMPT.to_string() + "\n\n---\n# Harness\n" + &agent.prompt,
             &agent,
         );
-        Conversation::new(ctx, system_prompt, agent, tools_filtered, chroot)
+        Conversation::new(ctx, system_prompt, agent, tools_permitted, chroot)
     }
 }

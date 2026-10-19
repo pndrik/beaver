@@ -6,3 +6,6 @@ pub use file::File;
 
 mod git;
 pub use git::Git;
+
+mod javascript;
+pub use javascript::JavaScript;

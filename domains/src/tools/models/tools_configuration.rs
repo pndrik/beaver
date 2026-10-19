@@ -10,6 +10,9 @@ pub struct ToolsConfiguration {
     pub toolsets: Vec<ToolSet>,
     #[serde(default)]
     pub permissions: Vec<ToolPermission>,
+    /// Offers provider tools an optional `redirect_to_file` argument.
+    #[serde(default)]
+    pub redirect_output: bool,
 }
 
 impl ToolsConfiguration {

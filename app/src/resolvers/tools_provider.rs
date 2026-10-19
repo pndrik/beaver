@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use super::javascript_sandbox;
 use app_adapters::tools::provider::EmbeddedProvider;
 use app_domains::{
     core::models::{AppContext, AppError},
@@ -37,14 +38,17 @@ pub async fn tools_provider(
     ctx: &AppContext,
 ) -> Result<Vec<Arc<dyn ToolsProvider + Send + Sync>>, AppError> {
     let mut providers: Vec<Arc<dyn ToolsProvider + Send + Sync>> = Vec::new();
+    let sandbox = javascript_sandbox(ctx).await?;
 
     add_provider_if_enabled(ctx, &mut providers, "embedded", async |ctx| {
-        Ok(Arc::new(EmbeddedProvider::new(ctx)) as Arc<dyn ToolsProvider + Send + Sync>)
+        Ok(Arc::new(EmbeddedProvider::new(ctx, sandbox.clone()))
+            as Arc<dyn ToolsProvider + Send + Sync>)
     })
     .await?;
 
     add_provider_if_enabled(ctx, &mut providers, "javascript", async |ctx| {
-        let mut provider = app_adapters::tools::provider::JavascriptProvider::new(ctx);
+        let mut provider =
+            app_adapters::tools::provider::JavascriptProvider::new(ctx, sandbox.clone());
         provider.reload(ctx).await?;
 
         Ok(Arc::new(provider) as Arc<dyn ToolsProvider + Send + Sync>)

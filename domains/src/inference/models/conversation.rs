@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::{Agent, Message, Usage};
+use super::{Agent, Message, Usage, chroot};
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
@@ -97,50 +97,12 @@ impl Conversation {
         &self.chroot
     }
 
-    /// Resolves `path` inside the chroot. Fails if it doesn't exist or escapes the chroot.
     pub fn get_absolute_path(&self, ctx: &AppContext, path: &str) -> Result<String, AppError> {
-        let joined = format!(
-            "{}/{}",
-            self.chroot.trim_end_matches('/'),
-            path.trim_start_matches('/')
-        );
+        chroot::resolve_path(ctx, &self.chroot, path)
+    }
 
-        let canonicalized = Path::new(&joined).canonicalize().map_err(|e| {
-            app_error!(
-                Validation,
-                "access_violation",
-                &format!("Invalid path '{}': {}", path, e),
-                ctx.clone()
-            )
-        })?;
-
-        let chroot_canonicalized = Path::new(&self.chroot).canonicalize().map_err(|e| {
-            app_error!(
-                Validation,
-                "access_violation",
-                &format!("Invalid chroot '{}': {}", self.chroot, e),
-                ctx.clone()
-            )
-        })?;
-        if !canonicalized.starts_with(&chroot_canonicalized) {
-            return Err(app_error!(
-                Validation,
-                "access_violation",
-                &format!("Path '{}' is outside of chroot", path),
-                ctx.clone()
-            ));
-        }
-
-        if !canonicalized.exists() {
-            return Err(app_error!(
-                Validation,
-                "access_violation",
-                &format!("Path '{}' does not exist", path),
-                ctx.clone()
-            ));
-        }
-
-        Ok(canonicalized.to_string_lossy().to_string())
+    pub fn get_new_path(&self, ctx: &AppContext, path: &str) -> Result<String, AppError> {
+        chroot::resolve_new_path(ctx, &self.chroot, path)
     }
 
     /*

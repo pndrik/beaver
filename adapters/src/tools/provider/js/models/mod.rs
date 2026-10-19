@@ -4,9 +4,6 @@
 mod beaver;
 pub use beaver::*;
 
-mod fetch_scope;
-pub use fetch_scope::*;
-
 mod package;
 pub use package::*;
 

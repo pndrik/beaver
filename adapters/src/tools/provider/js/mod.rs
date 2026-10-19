@@ -2,23 +2,24 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use async_trait::async_trait;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
     inference::models::Conversation,
     tools::{
-        models::{Call, ToolPermission},
-        traits::ToolsProvider,
+        models::{Call, SandboxRun, SandboxSource, ToolPermission},
+        traits::{CodeSandbox, ToolsProvider},
     },
 };
 
-mod javascript;
-use javascript::{JavaScript, Value};
 mod file;
 mod helper;
 mod models;
+
+#[cfg(test)]
+mod tests;
 
 use models::Tool;
 
@@ -27,12 +28,14 @@ const CONFIGURATION_SKILL_CONFIGURATION: &str = "tools.configuration";
 
 pub struct JavascriptProvider {
     tools: HashMap<String, Tool>,
+    sandbox: Arc<dyn CodeSandbox + Send + Sync>,
 }
 
 impl JavascriptProvider {
-    pub fn new(_ctx: &AppContext) -> Self {
+    pub fn new(_ctx: &AppContext, sandbox: Arc<dyn CodeSandbox + Send + Sync>) -> Self {
         Self {
             tools: HashMap::new(),
+            sandbox,
         }
     }
 }
@@ -110,7 +113,7 @@ impl ToolsProvider for JavascriptProvider {
     async fn execute(
         &self,
         ctx: &AppContext,
-        _conversation: &mut Conversation,
+        conversation: &mut Conversation,
         permissions: ToolPermission,
         input: &Call,
     ) -> Result<String, AppError> {
@@ -126,45 +129,48 @@ impl ToolsProvider for JavascriptProvider {
 
         // TBD: This has room for improvement
         let configuration = self.get_tool_configuration(ctx, &tool.package).await?;
-        let input_value = self.input_to_value(&input);
-        let permissions_value = self.permission_to_value(&permissions);
-        let ctx_clone = ctx.clone();
-        let directory = tool.directory.clone();
-        let main = tool.main.clone();
-        let scopes = tool.scopes.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            let mut js =
-                JavaScript::new(directory.clone(), format!("{}/{}", directory, main), scopes);
+        let run = SandboxRun {
+            source: SandboxSource::Function {
+                directory: tool.directory.clone(),
+                path: format!("/{}", tool.main),
+                name: "main".to_string(),
+                arguments: vec![
+                    serde_json::Value::Object(input.arguments_as_json_map()),
+                    configuration,
+                    self.permission_to_value(&permissions),
+                ],
+            },
+            scopes: tool.scopes.clone(),
+            limits: None,
+        };
+        let output = self.sandbox.run(ctx, conversation.chroot(), run).await?;
 
-            js.call(
-                &ctx_clone,
-                "main",
-                vec![input_value, configuration, permissions_value],
-            )
-        })
-        .await
-        .map_err(|e| {
-            app_error!(
+        if !output.console.is_empty() {
+            ctx.logger
+                .debug(
+                    ctx,
+                    &format!("Tool '{}' logged:\n{}", input.name, output.console),
+                )
+                .await;
+        }
+
+        match output.result {
+            Ok(Some(serde_json::Value::String(result))) => Ok(result),
+            Ok(_) => Err(app_error!(
+                Internal,
+                "tool_failed",
+                &format!(
+                    "Tool '{}' execution returned non-string result.",
+                    input.name
+                ),
+                ctx.clone()
+            )),
+            Err(e) => Err(app_error!(
                 Internal,
                 "tool_failed",
                 &format!("Tool '{}' execution failed: {}", input.name, e),
                 ctx.clone()
-            )
-        })??;
-
-        Ok(match result {
-            Value::String(s) => s,
-            _ => {
-                return Err(app_error!(
-                    Internal,
-                    "tool_failed",
-                    &format!(
-                        "Tool '{}' execution returned non-string result.",
-                        input.name
-                    ),
-                    ctx.clone()
-                ));
-            }
-        })
+            )),
+        }
     }
 }

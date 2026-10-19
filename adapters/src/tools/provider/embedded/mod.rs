@@ -7,14 +7,14 @@ use std::sync::Arc;
 mod models;
 pub use models::EmbeddedToolSet;
 
-use crate::tools::embedded::{File, Git};
+use crate::tools::embedded::{File, Git, JavaScript};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
     inference::models::Conversation,
     tools::{
         models::{Call, Tool, ToolPermission},
-        traits::{ToolSet, ToolsProvider},
+        traits::{CodeSandbox, ToolSet, ToolsProvider},
     },
 };
 
@@ -23,9 +23,14 @@ pub struct EmbeddedProvider {
 }
 
 impl EmbeddedProvider {
-    pub fn new(_ctx: &AppContext) -> Self {
+    /// `sandbox` runs the code of `javascript_run`, it must run JavaScript.
+    pub fn new(_ctx: &AppContext, sandbox: Arc<dyn CodeSandbox + Send + Sync>) -> Self {
         Self {
-            tool_sets: vec![Arc::new(File::new()), Arc::new(Git::new())],
+            tool_sets: vec![
+                Arc::new(File::new()),
+                Arc::new(Git::new()),
+                Arc::new(JavaScript::new(sandbox)),
+            ],
         }
     }
 }

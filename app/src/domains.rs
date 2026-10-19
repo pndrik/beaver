@@ -30,8 +30,9 @@ async fn get_flows(ctx: &AppContext) -> Result<Flows, AppError> {
 
 async fn get_tools(ctx: &AppContext) -> Result<Tools, AppError> {
     let tools_providers = resolvers::tools_provider(ctx).await?;
+    let output_writer = resolvers::output_writer(ctx).await?;
 
-    Tools::new(tools_providers)
+    Tools::new(tools_providers, output_writer)
 }
 
 impl Domains {

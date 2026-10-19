@@ -11,12 +11,17 @@ pub mod use_cases;
 
 pub struct Tools {
     pub tools_providers: Vec<Arc<dyn traits::ToolsProvider + Send + Sync>>,
+    pub(crate) output_writer: Arc<dyn traits::OutputWriter + Send + Sync>,
 }
 
 impl Tools {
     pub fn new(
         tools_providers: Vec<Arc<dyn traits::ToolsProvider + Send + Sync>>,
+        output_writer: Arc<dyn traits::OutputWriter + Send + Sync>,
     ) -> Result<Self, AppError> {
-        Ok(Self { tools_providers })
+        Ok(Self {
+            tools_providers,
+            output_writer,
+        })
     }
 }

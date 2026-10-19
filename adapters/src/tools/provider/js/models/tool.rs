@@ -3,8 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::FetchScope;
-use app_domains::tools::models::Schema;
+use app_domains::tools::models::{SandboxScopes, Schema};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tool {
@@ -15,12 +14,8 @@ pub struct Tool {
 
     pub main: String,
     pub description: String,
-    pub scopes: Scopes,
-    pub parameters: Schema,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Scopes {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fetch: Option<FetchScope>,
+    #[serde(default)]
+    pub scopes: SandboxScopes,
+    pub parameters: Schema,
 }

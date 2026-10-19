@@ -4,6 +4,8 @@
 mod agent;
 pub use agent::*;
 
+pub mod chroot;
+
 mod compression;
 pub use compression::*;
 

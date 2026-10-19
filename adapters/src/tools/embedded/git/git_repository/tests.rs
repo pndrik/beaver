@@ -118,3 +118,138 @@ fn commits_new_files_including_new_directories() {
     );
     assert_eq!(commit_count(&dir), 2);
 }
+
+/// Three commits: `add a`, `add b`, `change a`.
+fn history() -> (TempDir, GitRepository) {
+    let (dir, git) = repository();
+    fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+    git.commit("add a").unwrap();
+    fs::create_dir(dir.path().join("docs")).unwrap();
+    fs::write(dir.path().join("docs/b.txt"), "b\n").unwrap();
+    git.commit("add b\n\nWith a body.").unwrap();
+    fs::write(dir.path().join("a.txt"), "two\n").unwrap();
+    git.commit("change a").unwrap();
+    (dir, git)
+}
+
+fn subjects(commits: &[String]) -> Vec<&str> {
+    commits
+        .iter()
+        .map(|commit| {
+            commit
+                .lines()
+                .next()
+                .unwrap()
+                .rsplit_once(" Beaver ")
+                .unwrap()
+                .1
+        })
+        .collect()
+}
+
+#[test]
+fn log_lists_commits_newest_first() {
+    let (_dir, git) = history();
+    let lines = git.log("HEAD", None, 0, 20).unwrap();
+
+    assert_eq!(subjects(&lines), ["change a", "add b", "add a"]);
+    assert_eq!(lines[0].split(' ').next().unwrap().len(), 10);
+}
+
+#[test]
+fn log_lists_the_changed_files_of_each_commit() {
+    let (dir, git) = history();
+    fs::rename(dir.path().join("a.txt"), dir.path().join("docs/a.txt")).unwrap();
+    fs::remove_file(dir.path().join("docs/b.txt")).unwrap();
+    fs::write(dir.path().join("c.txt"), "c\n").unwrap();
+    git.commit("move a, drop b, add c").unwrap();
+
+    let files = |commit: &String| commit.lines().skip(1).collect::<Vec<_>>().join("\n");
+    let commits = git.log("HEAD", None, 0, 20).unwrap();
+    assert_eq!(
+        files(&commits[0]),
+        "  A c.txt\n  R a.txt -> docs/a.txt\n  D docs/b.txt"
+    );
+    assert_eq!(files(&commits[1]), "  M a.txt");
+    assert_eq!(files(&commits[2]), "  A docs/b.txt");
+}
+
+#[test]
+fn log_shortens_long_file_lists() {
+    let (dir, git) = repository();
+    for i in 0..25 {
+        fs::write(dir.path().join(format!("{:02}.txt", i)), "x").unwrap();
+    }
+    git.commit("many").unwrap();
+
+    let commit = &git.log("HEAD", None, 0, 1).unwrap()[0];
+    assert_eq!(commit.lines().count(), 1 + 20 + 1);
+    assert!(commit.ends_with("  ... 5 more files"));
+}
+
+#[test]
+fn log_pages_with_skip_and_limit() {
+    let (_dir, git) = history();
+    assert_eq!(subjects(&git.log("HEAD", None, 1, 1).unwrap()), ["add b"]);
+    assert_eq!(
+        subjects(&git.log("HEAD~1", None, 0, 20).unwrap()),
+        ["add b", "add a"]
+    );
+}
+
+#[test]
+fn log_filters_by_file_or_directory() {
+    let (_dir, git) = history();
+    assert_eq!(
+        subjects(&git.log("HEAD", Some("a.txt"), 0, 20).unwrap()),
+        ["change a", "add a"]
+    );
+    assert_eq!(
+        subjects(&git.log("HEAD", Some("docs"), 0, 20).unwrap()),
+        ["add b"]
+    );
+    assert!(
+        git.log("HEAD", Some("missing.txt"), 0, 20)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn show_prints_only_the_commits_changes() {
+    let (_dir, git) = history();
+    let shown = git.show("HEAD~1", None).unwrap();
+
+    assert!(shown.starts_with("commit "));
+    assert!(shown.contains("Author: Beaver <beaver@example.com>"));
+    assert!(shown.contains("    add b\n    \n    With a body.\n"));
+    assert!(shown.contains("docs/b.txt"));
+    assert!(shown.contains("+b\n"));
+    assert!(!shown.contains("a.txt"));
+}
+
+#[test]
+fn show_diffs_against_the_parent_or_nothing_for_the_first_commit() {
+    let (_dir, git) = history();
+    let changed = git.show("HEAD", None).unwrap();
+    assert!(changed.contains("-one\n"));
+    assert!(changed.contains("+two\n"));
+
+    let first = git.show("HEAD~2", None).unwrap();
+    assert!(first.contains("+one\n"));
+}
+
+#[test]
+fn show_filters_by_file() {
+    let (_dir, git) = history();
+    let shown = git.show("HEAD~1", Some("a.txt")).unwrap();
+    assert!(shown.contains("    add b"));
+    assert!(!shown.contains("docs/b.txt"));
+}
+
+#[test]
+fn unknown_revisions_fail() {
+    let (_dir, git) = history();
+    assert!(git.log("missing", None, 0, 20).is_err());
+    assert!(git.show("missing", None).is_err());
+}
