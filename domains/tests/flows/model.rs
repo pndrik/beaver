@@ -448,7 +448,7 @@ fn flow_with_arguments(arguments: &str) -> String {
 #[test]
 fn parses_arguments() {
     let yaml = flow_with_arguments(
-        r#"    name: { required: true, pattern: "^[a-z]+$" }
+        r#"    name: { required: true, regex: "^[a-z]+$" }
     n: { type: number }
     f: { type: float }
     plain: {}"#,
@@ -463,7 +463,7 @@ fn parses_arguments() {
     assert_eq!(arguments["n"].type_, ValueType::Number);
     assert_eq!(arguments["f"].type_, ValueType::Float);
     assert!(!arguments["plain"].required);
-    assert!(arguments["plain"].pattern.is_none());
+    assert!(arguments["plain"].regex.is_none());
 }
 
 #[test]
@@ -473,15 +473,15 @@ fn rejects_invalid_arguments() {
             .contains("argument name 'a-b' must match")
     );
     assert!(
-        validation_error(&flow_with_arguments("    n: { type: number, pattern: x }"))
-            .contains("argument 'n': pattern is only allowed for type string")
+        validation_error(&flow_with_arguments("    n: { type: number, regex: x }"))
+            .contains("argument 'n': regex is only allowed for type string")
     );
     assert!(
         validation_error_with(
-            &flow_with_arguments("    s: { pattern: \"(\" }"),
+            &flow_with_arguments("    s: { regex: \"(\" }"),
             "regex_invalid"
         )
-        .contains("argument 's': pattern: invalid regex '('")
+        .contains("argument 's': regex: invalid regex '('")
     );
     parse_error(&flow_with_arguments("    s: { type: bool }"));
     parse_error(&flow_with_arguments("    s: { default: x }"));

@@ -17,18 +17,18 @@ pub struct Argument {
     #[serde(rename = "type", default)]
     pub type_: ValueType,
     #[serde(default)]
-    pub pattern: Option<String>,
+    pub regex: Option<String>,
     #[serde(default)]
     pub required: bool,
 }
 
 impl Argument {
     pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
-        if let Some(pattern) = &self.pattern {
+        if let Some(pattern) = &self.regex {
             if self.type_ != ValueType::String {
-                return Err(invalid(ctx, "pattern is only allowed for type string"));
+                return Err(invalid(ctx, "regex is only allowed for type string"));
             }
-            regex(ctx, pattern).map_err(|err| within("pattern", err))?;
+            regex(ctx, pattern).map_err(|err| within("regex", err))?;
         }
         Ok(())
     }
@@ -41,7 +41,7 @@ impl Argument {
             .type_
             .parse(value)
             .ok_or_else(|| rejected(format!("{} is not a {}", value, self.type_.name())))?;
-        if let (Some(pattern), Value::String(text)) = (&self.pattern, &parsed)
+        if let (Some(pattern), Value::String(text)) = (&self.regex, &parsed)
             && !regex(ctx, pattern)?.is_match(text)
         {
             return Err(rejected(format!("{} does not match '{}'", value, pattern)));

@@ -57,7 +57,7 @@ metadata:
   description: Clone and review a PR
 spec:
   arguments:
-    url: { required: true, pattern: "^https://" }
+    url: { required: true, regex: "^https://" }
     title: {}
   contexts:
     work:
@@ -93,9 +93,9 @@ spec:
 
 #### Arguments
 
-`spec.arguments` declares the only input of a flow: `<name>: { type, pattern, required }`. It is optional; a flow without it takes no arguments, and passing any fails the run. `type` is `string` (default), `number` (64-bit integer) or `float`; strings are trimmed and parsed for `number` and `float`. `pattern` is a regex a `string` argument must match somewhere (anchor it with `^…$` for a full match). `required` defaults to `false`; an optional argument that was not passed is simply absent. Arguments are checked before any step runs: an undeclared, missing required, unconvertible or non-matching argument fails the run. Names must be identifiers, and a `pattern` on a non-string or an invalid regex is rejected when the flow loads.
+`spec.arguments` declares the only input of a flow: `<name>: { type, regex, required }`. It is optional; a flow without it takes no arguments, and passing any fails the run. `type` is `string` (default), `number` (64-bit integer) or `float`; strings are trimmed and parsed for `number` and `float`. A `string` argument must match its `regex` somewhere (anchor it with `^…$` for a full match). `required` defaults to `false`; an optional argument that was not passed is simply absent. Arguments are checked before any step runs: an undeclared, missing required, unconvertible or non-matching argument fails the run. Names must be identifiers, and a `regex` on a non-string or an invalid one is rejected when the flow loads.
 
-`triggers.webhook.arguments` maps the webhook payload to arguments, `<argument>: <template>`. These templates are the only ones that see `Body` (the payload) and `Query` (query parameters without `token`). Every key must be a declared argument and every required argument must be mapped. The rendered strings are taken literally, so a missing payload field renders `<NULL>` (use a `pattern` to catch that). If the mapped arguments are invalid, the hook answers `422` and the flow does not start. Unknown hook names and wrong tokens both get `401`.
+`triggers.webhook.arguments` maps the webhook payload to arguments, `<argument>: <template>`. These templates are the only ones that see `Body` (the payload) and `Query` (query parameters without `token`). Every key must be a declared argument and every required argument must be mapped. The rendered strings are taken literally, so a missing payload field renders `<NULL>` (use a `regex` to catch that). If the mapped arguments are invalid, the hook answers `422` and the flow does not start. Unknown hook names and wrong tokens both get `401`.
 
 #### Conditions and loops
 

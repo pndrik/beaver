@@ -8,7 +8,7 @@ spec:
   arguments:
     state: { required: true }
     branch: { required: true }
-    url: { required: true, pattern: "^https://" }
+    url: { required: true, regex: "^https://" }
     title: {}
   contexts:
     work:

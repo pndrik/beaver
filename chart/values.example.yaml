@@ -62,7 +62,7 @@ flows:
       description: Checks out the pull request in a temporary directory and reviews it with the full code base at hand.
     spec:
       arguments:
-        repository: { required: true, pattern: "^[\\w.-]+/[\\w.-]+$" }
+        repository: { required: true, regex: "^[\\w.-]+/[\\w.-]+$" }
         branch: { required: true }
         workspace: {}
         repository_name: {}

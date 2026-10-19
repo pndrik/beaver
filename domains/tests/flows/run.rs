@@ -639,7 +639,7 @@ async fn failing_inner_step_fails_the_flow_and_cleans_up() {
 }
 
 const CHECKED: &str = r#"
-    name: { required: true, pattern: "^[a-z]+$" }
+    name: { required: true, regex: "^[a-z]+$" }
     n: { type: number }
     f: { type: float }
     opt: {}"#;
