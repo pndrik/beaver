@@ -13,14 +13,15 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
+app = { path = "app" }
+app-domains = { path = "domains" }
+app-adapters = { path = "adapters" }
+
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 async-trait = "0.1.92"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-app = { path = "app" }
-app-domains = { path = "domains" }
-app-adapters = { path = "adapters" }
 yaml_serde = "0.10"
 uuid = { version = "1.28.0", features = ["v4"] }
 regex = "1.13.1"
@@ -28,3 +29,4 @@ http = "1.5.0"
 base64 = "0.23.1"
 chrono = "0.4.45"
 subtle = "2.6"
+tempfile = "3.27"

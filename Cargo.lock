@@ -1213,9 +1213,9 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.7.0-rc.4"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "550847e05ab6661f2a407cdf201d8e14890f00a1ded8efbed738762ab5c1258e"
+checksum = "53e68820b008ab7e00fde0474c2cfc81315296a1bb0d014943dd74bfcb062e28"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -1223,7 +1223,7 @@ dependencies = [
  "futures",
  "macro_rules_attribute",
  "mime_guess",
- "paste",
+ "pastey",
  "regex",
  "reqwest",
  "serde",
@@ -2182,12 +2182,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
 name = "pastey"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2592,9 +2586,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "3.5.1"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab5023804cbe0304cbe06197ac16e645a0a0d0ffa2953bf735c15c2fa0213350"
+checksum = "ece64e19631fc38758181e637c15509a2c2709ee53bfde1e1d58f9dc991f919e"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2603,6 +2597,7 @@ dependencies = [
  "futures",
  "http",
  "indexmap 2.14.2",
+ "libc",
  "oauth2",
  "pastey",
  "pin-project-lite",
@@ -2623,9 +2618,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "3.5.1"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1da498700030856ba63114bceefa30ba21f5e278cb975e5b9de3529fe842b40"
+checksum = "967fa7f7935d7d6217d593df0e8e5c9307bcaf256974a5a9ee64476c97735389"
 dependencies = [
  "darling",
  "proc-macro2",

@@ -17,13 +17,13 @@ base64.workspace = true
 chrono.workspace = true
 subtle.workspace = true
 
-genai = "0.7.0-rc.4"
+genai = "0.7.0"
 config = "0.15.27"
 minijinja = { version = "3.0.0", features = ["serde"] }
 boa_engine = "0.22.0"
 boa_runtime = "0.22.0"
 boa_gc = "0.22.0"
-rmcp = { version = "3.5.1", features = [
+rmcp = { version = "3.7.0", features = [
   "client",
   "transport-streamable-http-client-reqwest",
   "auth",
@@ -33,4 +33,4 @@ git2 = { version = "0.21.0", features = ["https", "ssh", "vendored-libgit2", "ve
 ssh2 = { version = "0.9.6", features = ["vendored-openssl"] }
 
 [dev-dependencies]
-tempfile = "3.27"
+tempfile.workspace = true
