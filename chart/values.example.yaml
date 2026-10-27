@@ -12,6 +12,8 @@ configuration:
           - name: atlassian
             description: "MCP server allowing access to Jira and Confluence."
             url: "https://mcp.atlassian.com/v1/mcp/preview"
+            # Optional, negotiated by default. Pins the MCP protocol version and skips the discover probe.
+            # protocol_version: "2025-06-18"
             credentials:
               basic:
                 username: "<Username>"

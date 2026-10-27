@@ -4,10 +4,10 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use http::{HeaderName, HeaderValue};
 use rmcp::{
-    RoleClient, ServiceExt,
+    ClientLifecycleMode, ClientServiceExt, RoleClient,
     model::{
         CallToolRequestParams, ClientCapabilities, ClientConfig, ContentBlock, Implementation,
-        InitializeRequestParams,
+        InitializeRequestParams, ProtocolVersion,
     },
     service::RunningService,
     transport::{
@@ -119,8 +119,51 @@ impl McpSession {
         Ok(headers)
     }
 
+    pub(super) fn lifecycle(
+        &self,
+        ctx: &AppContext,
+    ) -> Result<(ClientLifecycleMode, ProtocolVersion), AppError> {
+        let Some(pinned) = &self.server.protocol_version else {
+            return Ok((
+                ClientLifecycleMode::Auto {
+                    preferred_versions: vec![ProtocolVersion::LATEST],
+                    legacy_version: Some(ProtocolVersion::LATEST_WITH_INITIALIZE),
+                },
+                ProtocolVersion::LATEST_WITH_INITIALIZE,
+            ));
+        };
+
+        let version = ProtocolVersion::KNOWN_VERSIONS
+            .iter()
+            .find(|v| v.as_str() == pinned)
+            .cloned()
+            .ok_or_else(|| {
+                app_error!(
+                    Validation,
+                    "configuration_load_failed",
+                    format!(
+                        "Unknown MCP protocol version '{}' for server '{}'",
+                        pinned, self.server.name
+                    ),
+                    ctx.clone()
+                )
+            })?;
+
+        if version.has_initialize() {
+            Ok((ClientLifecycleMode::Initialize, version))
+        } else {
+            Ok((
+                ClientLifecycleMode::Discover {
+                    preferred_versions: vec![version.clone()],
+                },
+                version,
+            ))
+        }
+    }
+
     pub(super) async fn start_session(&mut self, ctx: &AppContext) -> Result<(), AppError> {
         let headers = self.get_auth_headers(ctx)?;
+        let (lifecycle, version) = self.lifecycle(ctx)?;
         let transport_config =
             StreamableHttpClientTransportConfig::with_uri(self.server.url.clone())
                 .custom_headers(headers);
@@ -128,16 +171,35 @@ impl McpSession {
         let client_info = ClientConfig::new(
             ClientCapabilities::default(),
             Implementation::new("beaver", "0.0.1"),
-        );
+        )
+        .with_protocol_version(version);
 
-        self.client = Some(client_info.serve(transport).await.map_err(|e| {
-            app_error!(
-                Internal,
-                "configuration_load_failed",
-                format!("Failed to start MCP client: {}", e),
-                ctx.clone()
-            )
-        })?);
+        let client = client_info
+            .serve_with_lifecycle(transport, lifecycle)
+            .await
+            .map_err(|e| {
+                app_error!(
+                    Internal,
+                    "configuration_load_failed",
+                    format!("Failed to start MCP client: {}", e),
+                    ctx.clone()
+                )
+            })?;
+
+        if let Some(info) = client.peer_info() {
+            ctx.logger
+                .debug(
+                    ctx,
+                    &format!(
+                        "MCP server '{}' negotiated protocol version {}",
+                        self.server.name,
+                        info.protocol_version.as_str()
+                    ),
+                )
+                .await;
+        }
+
+        self.client = Some(client);
 
         Ok(())
     }

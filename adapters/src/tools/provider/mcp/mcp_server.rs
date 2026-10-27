@@ -24,4 +24,6 @@ pub(super) struct McpServer {
     pub description: String,
     pub url: String,
     pub credentials: Option<McpCredentials>,
+    #[serde(default)]
+    pub protocol_version: Option<String>,
 }

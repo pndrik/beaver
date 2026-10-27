@@ -23,6 +23,9 @@ use mcp_session::McpSession;
 mod mcp_tool;
 use mcp_tool::McpTool;
 
+#[cfg(test)]
+mod tests;
+
 pub struct McpProvider {
     tools: HashMap<String, McpTool>,
     server: HashMap<String, McpServer>,
