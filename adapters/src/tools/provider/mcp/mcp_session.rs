@@ -9,7 +9,7 @@ use rmcp::{
         CallToolRequestParams, ClientCapabilities, ClientConfig, ContentBlock, Implementation,
         InitializeRequestParams, ProtocolVersion,
     },
-    service::RunningService,
+    service::{ClientInitializeError, RunningService},
     transport::{
         StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
     },
@@ -161,9 +161,22 @@ impl McpSession {
         }
     }
 
-    pub(super) async fn start_session(&mut self, ctx: &AppContext) -> Result<(), AppError> {
-        let headers = self.get_auth_headers(ctx)?;
-        let (lifecycle, version) = self.lifecycle(ctx)?;
+    pub(super) fn legacy_fallback_version(
+        server_supported: &[ProtocolVersion],
+    ) -> Option<ProtocolVersion> {
+        ProtocolVersion::KNOWN_VERSIONS
+            .iter()
+            .rev()
+            .find(|v| v.has_initialize() && server_supported.contains(v))
+            .cloned()
+    }
+
+    async fn connect(
+        &self,
+        headers: HashMap<HeaderName, HeaderValue>,
+        lifecycle: ClientLifecycleMode,
+        version: ProtocolVersion,
+    ) -> Result<RunningService<RoleClient, InitializeRequestParams>, ClientInitializeError> {
         let transport_config =
             StreamableHttpClientTransportConfig::with_uri(self.server.url.clone())
                 .custom_headers(headers);
@@ -174,17 +187,39 @@ impl McpSession {
         )
         .with_protocol_version(version);
 
-        let client = client_info
-            .serve_with_lifecycle(transport, lifecycle)
-            .await
-            .map_err(|e| {
-                app_error!(
-                    Internal,
-                    "configuration_load_failed",
-                    format!("Failed to start MCP client: {}", e),
-                    ctx.clone()
-                )
-            })?;
+        client_info.serve_with_lifecycle(transport, lifecycle).await
+    }
+
+    pub(super) async fn start_session(&mut self, ctx: &AppContext) -> Result<(), AppError> {
+        let headers = self.get_auth_headers(ctx)?;
+        let (lifecycle, version) = self.lifecycle(ctx)?;
+        let auto = matches!(lifecycle, ClientLifecycleMode::Auto { .. });
+
+        let result = match self.connect(headers.clone(), lifecycle, version).await {
+            Err(ClientInitializeError::NoCompatibleProtocolVersion {
+                client_supported,
+                server_supported,
+            }) if auto => match Self::legacy_fallback_version(&server_supported) {
+                Some(fallback) => {
+                    self.connect(headers, ClientLifecycleMode::Initialize, fallback)
+                        .await
+                }
+                None => Err(ClientInitializeError::NoCompatibleProtocolVersion {
+                    client_supported,
+                    server_supported,
+                }),
+            },
+            result => result,
+        };
+
+        let client = result.map_err(|e| {
+            app_error!(
+                Internal,
+                "configuration_load_failed",
+                format!("Failed to start MCP client: {}", e),
+                ctx.clone()
+            )
+        })?;
 
         if let Some(info) = client.peer_info() {
             ctx.logger

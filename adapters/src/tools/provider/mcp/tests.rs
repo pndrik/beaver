@@ -84,3 +84,25 @@ fn server_deserializes_with_and_without_protocol_version() {
     .unwrap();
     assert_eq!(server.protocol_version.as_deref(), Some("2025-06-18"));
 }
+
+#[test]
+fn legacy_fallback_picks_newest_shared_handshake_version() {
+    let server_supported = vec![
+        ProtocolVersion::V_2024_11_05,
+        ProtocolVersion::V_2025_03_26,
+        ProtocolVersion::V_2025_06_18,
+        ProtocolVersion::V_2025_11_25,
+    ];
+    assert_eq!(
+        McpSession::legacy_fallback_version(&server_supported),
+        Some(ProtocolVersion::V_2025_11_25)
+    );
+    assert_eq!(
+        McpSession::legacy_fallback_version(&[ProtocolVersion::V_2025_03_26]),
+        Some(ProtocolVersion::V_2025_03_26)
+    );
+    assert_eq!(
+        McpSession::legacy_fallback_version(&[ProtocolVersion::V_2026_07_28]),
+        None
+    );
+}
