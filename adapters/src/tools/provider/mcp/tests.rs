@@ -106,3 +106,18 @@ fn legacy_fallback_picks_newest_shared_handshake_version() {
         None
     );
 }
+
+#[test]
+fn tool_results_parse_with_and_without_result_type() {
+    use rmcp::model::ServerResult;
+
+    for body in [
+        serde_json::json!({ "content": [{ "type": "text", "text": "hi" }] }),
+        serde_json::json!({ "resultType": "complete", "content": [{ "type": "text", "text": "hi" }] }),
+    ] {
+        let Ok(ServerResult::CallToolResult(result)) = serde_json::from_value(body) else {
+            panic!("expected a CallToolResult");
+        };
+        assert!(result.result_type.is_none_or(|t| t.is_complete()));
+    }
+}

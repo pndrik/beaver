@@ -337,18 +337,18 @@ impl McpSession {
                 )
             })?;
 
-        if let Some(result_type) = tool_result.result_type {
-            if result_type.as_str() != "success" && result_type.as_str() != "text" {
-                return Err(app_error!(
-                    Internal,
-                    "tool_call_failed",
-                    format!(
-                        "Tool '{}' call failed with result type '{}'",
-                        input.name, result_type
-                    ),
-                    ctx.clone()
-                ));
-            }
+        if let Some(result_type) = &tool_result.result_type
+            && !result_type.is_complete()
+        {
+            return Err(app_error!(
+                Internal,
+                "tool_call_failed",
+                format!(
+                    "Tool '{}' call returned unsupported result type '{}'",
+                    input.name, result_type
+                ),
+                ctx.clone()
+            ));
         }
 
         let mut all_text: String = tool_result
