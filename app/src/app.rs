@@ -1,12 +1,13 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
+use tracing::Span;
 
 use app_domains::{
     core::{
         models::{AppContext, AppError},
-        traits::ContextFactory,
+        traits::{ContextFactory, Logging},
     },
     inference::models::Conversation,
 };
@@ -17,17 +18,20 @@ pub struct App {
     pub domains: Domains,
     boot_context: AppContext,
     context_factory: Arc<dyn ContextFactory + Send + Sync>,
+    logging: Arc<dyn Logging + Send + Sync>,
 }
 
 impl App {
     pub async fn new(
         boot_context: AppContext,
         context_factory: Arc<dyn ContextFactory + Send + Sync>,
+        logging: Arc<dyn Logging + Send + Sync>,
     ) -> Result<Self, AppError> {
         Ok(Self {
             domains: Domains::new(&boot_context).await?,
             boot_context,
             context_factory,
+            logging,
         })
     }
 
@@ -62,13 +66,13 @@ impl App {
             .await
     }
 
-    pub async fn get_context(
-        &self,
-        trace_id: Option<String>,
-        metadata: HashMap<String, String>,
-    ) -> Result<AppContext, AppError> {
+    pub async fn get_context(&self, trace_id: Option<String>) -> Result<AppContext, AppError> {
         self.context_factory
-            .create(&self.boot_context, trace_id, metadata)
+            .create(&self.boot_context, trace_id)
             .await
+    }
+
+    pub fn context_span(&self, ctx: &AppContext) -> Span {
+        self.logging.context_span(ctx)
     }
 }

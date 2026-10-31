@@ -17,6 +17,8 @@ base64.workspace = true
 chrono.workspace = true
 subtle.workspace = true
 uuid.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 genai = "0.7.0"
 config = "0.15.27"

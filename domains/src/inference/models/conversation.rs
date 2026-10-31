@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use std::path::Path;
+use tracing::debug;
 
 use super::{Agent, Message, Usage, chroot};
 use crate::{
@@ -124,6 +125,13 @@ impl Conversation {
         };
         self.messages
             .insert(index.clamp(0, len) as usize, message.clone());
+
+        debug!(
+            channel = "conversation",
+            agent = self.agent.metadata.name.as_str(),
+            message_type = message.message_type().as_string(),
+            content = message.content().unwrap_or_default(),
+        );
 
         for subscriber in self.subscribers.iter() {
             subscriber(message.clone());

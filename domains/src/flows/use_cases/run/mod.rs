@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde_json::{Map, Value};
+use tracing::info;
 
 use crate::{
     core::models::{AppContext, AppError},
@@ -32,6 +33,12 @@ impl Flows {
         inference: &Inference,
         tools: &Tools,
     ) -> Result<(), AppError> {
+        info!(
+            channel = "audit",
+            object = "flow",
+            action = "run",
+            flow = %flow.metadata.name,
+        );
         flow.validate(ctx)?;
         let arguments = flow.arguments(ctx, arguments)?;
         let mut run = FlowRun::new(flow.clone(), arguments, 0);

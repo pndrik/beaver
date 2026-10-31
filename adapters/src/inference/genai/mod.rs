@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use async_trait::async_trait;
+use tracing::trace;
 
 use app_domains::{
     app_error,
@@ -71,16 +72,11 @@ impl InferenceProvider for GenAi {
 
         let usage = &chat_response.usage;
         let details = usage.prompt_tokens_details.as_ref();
-        ctx.logger()
-            .trace(
-                ctx,
-                &format!(
-                    "rust-genai: Inference request completed. total_tokens: {}, cached_tokens: {}",
-                    usage.total_tokens.unwrap_or(0),
-                    details.and_then(|d| d.cached_tokens).unwrap_or(0),
-                ),
-            )
-            .await;
+        trace!(
+            total_tokens = usage.total_tokens.unwrap_or(0),
+            cached_tokens = details.and_then(|d| d.cached_tokens).unwrap_or(0),
+            "genai: Inference request completed"
+        );
 
         let usage = Usage {
             input: usage.prompt_tokens.unwrap_or(0).max(0) as u64,

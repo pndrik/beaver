@@ -10,7 +10,6 @@ use app_adapters::{
     agent,
     configuration::ConfigurationMap,
     inference::Scripted,
-    logger::LoggerRecording,
     tools::{output_writer, provider::EchoProvider},
 };
 use app_domains::{
@@ -102,7 +101,6 @@ async fn fixture(redirect_output: bool) -> Fixture {
     let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
-        Arc::new(LoggerRecording::new()),
     )));
 
     let mut agent = Agent::new(

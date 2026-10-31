@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use std::sync::Arc;
+use tracing::{info, warn};
 
 use crate::{
     app_error,
@@ -162,31 +163,24 @@ impl Tools {
         inference: &Inference,
         call: &Call,
     ) -> Result<(), AppError> {
-        ctx.logger()
-            .trace(
-                ctx,
-                &format!(
-                    "Agent '{}' is calling tool '{}'",
-                    conversation.agent().metadata.name,
-                    call.name
-                ),
-            )
-            .await;
+        info!(
+            channel = "audit",
+            object = "tool",
+            action = "call",
+            agent = conversation.agent().metadata.name,
+            tool = call.name
+        );
 
         let permissions =
             match get_permission_for_tool(ctx, &conversation.agent().tools, &call.name) {
                 Ok(p) => p,
                 Err(err) => {
-                    ctx.logger()
-                        .warn(
-                            ctx,
-                            &format!(
-                                "Agent '{}' has no permission to access tool '{}'.",
-                                conversation.agent().metadata.name,
-                                call.name
-                            ),
-                        )
-                        .await;
+                    warn!(
+                        channel = "audit",
+                        agent = %conversation.agent().metadata.name,
+                        tool = %call.name,
+                        "No permission to access tool"
+                    );
                     add_tool_message_to_conversation(
                         ctx,
                         conversation,
@@ -209,12 +203,12 @@ impl Tools {
                         .await?
                 }
                 Err(err) => {
-                    ctx.logger()
-                        .warn(
-                            ctx,
-                            &format!("Tool '{}' failed with: {}", call.name, err.internal_message),
-                        )
-                        .await;
+                    warn!(
+                        agent = %conversation.agent().metadata.name,
+                        tool = %call.name,
+                        error = %err.internal_message,
+                        "Tool failed"
+                    );
                     add_tool_message_to_conversation(
                         ctx,
                         conversation,
@@ -234,12 +228,12 @@ impl Tools {
                 .call_subagent_tool(ctx, conversation, permissions, call, inference)
                 .await
             {
-                ctx.logger()
-                    .warn(
-                        ctx,
-                        &format!("Tool '{}' failed with: {}", call.name, err.internal_message),
-                    )
-                    .await;
+                warn!(
+                    agent = %conversation.agent().metadata.name,
+                    tool = %call.name,
+                    error = %err.internal_message,
+                    "Tool failed"
+                );
                 add_tool_message_to_conversation(
                     ctx,
                     conversation,
@@ -253,9 +247,11 @@ impl Tools {
             return Ok(());
         }
 
-        ctx.logger()
-            .warn(ctx, &format!("Tool '{}' not found", call.name))
-            .await;
+        warn!(
+            agent = %conversation.agent().metadata.name,
+            tool = %call.name,
+            "Tool not found"
+        );
         add_tool_message_to_conversation(
             ctx,
             conversation,

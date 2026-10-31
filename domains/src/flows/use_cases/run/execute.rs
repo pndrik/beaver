@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use std::{future::Future, pin::Pin, sync::Arc};
+use tracing::info;
 
 use super::chroot;
 use crate::{
@@ -22,9 +23,7 @@ impl Flows {
         Box::pin(async move {
             let flow = Arc::clone(&run.flow);
             let flow_name = &flow.metadata.name;
-            ctx.logger()
-                .info(ctx, &format!("Flow '{}' started", flow_name))
-                .await;
+            info!(channel = "flow", flow = flow_name, "Flow started");
 
             let result = async {
                 self.contexts(ctx, inference, tools, run).await?;
@@ -40,9 +39,11 @@ impl Flows {
             }
 
             if result.is_ok() {
-                ctx.logger()
-                    .info(ctx, &format!("Flow '{}' finished", flow_name))
-                    .await;
+                info!(
+                    channel = "flow",
+                    flow = flow_name,
+                    "Flow completed successfully"
+                );
             }
 
             result

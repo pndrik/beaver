@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde_json::Value;
+use tracing::{error, warn};
 
 use crate::{
     app_error,
@@ -31,33 +32,18 @@ impl Flows {
         query: &Value,
     ) -> Result<Hook, AppError> {
         if token.is_empty() {
-            ctx.logger()
-                .warn(ctx, &format!("Empty token for hook '{}'", name))
-                .await;
+            warn!(hook = %name, "Empty hook token");
             return Err(unauthorized(ctx));
         }
 
         let flow = match self.flow_provider.get_by_webhook(ctx, name, token).await {
             Ok(Some(flow)) => flow,
             Ok(None) => {
-                ctx.logger()
-                    .warn(
-                        ctx,
-                        &format!("No flow found for hook '{}' or invalid token", name),
-                    )
-                    .await;
+                warn!(hook = %name, "No flow found for hook or invalid token");
                 return Err(unauthorized(ctx));
             }
             Err(err) => {
-                ctx.logger()
-                    .error(
-                        ctx,
-                        &format!(
-                            "Failed to look up flows for hook '{}': {}",
-                            name, err.internal_message
-                        ),
-                    )
-                    .await;
+                error!(hook = %name, error = %err.internal_message, "Failed to look up flows for hook");
                 return Err(err);
             }
         };
@@ -68,12 +54,7 @@ impl Flows {
         match arguments {
             Ok(arguments) => Ok(Hook { flow, arguments }),
             Err(err) => {
-                ctx.logger()
-                    .warn(
-                        ctx,
-                        &format!("Hook '{}' rejected: {}", name, err.internal_message),
-                    )
-                    .await;
+                warn!(hook = %name, error = %err.internal_message, "Hook rejected");
                 Err(err)
             }
         }

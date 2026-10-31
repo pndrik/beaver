@@ -4,25 +4,19 @@
 use serde_json::{Map, Value};
 use std::sync::Arc;
 
-use app_domains::core::traits::{Configuration, Context, Logger};
+use app_domains::core::traits::{Configuration, Context};
 
 #[derive(Debug)]
 pub struct ContextStandard {
     trace_id: String,
     configuration: Arc<dyn Configuration + Send + Sync>,
-    logger: Arc<dyn Logger + Send + Sync>,
 }
 
 impl ContextStandard {
-    pub fn new(
-        trace_id: String,
-        configuration: Arc<dyn Configuration + Send + Sync>,
-        logger: Arc<dyn Logger + Send + Sync>,
-    ) -> Self {
+    pub fn new(trace_id: String, configuration: Arc<dyn Configuration + Send + Sync>) -> Self {
         Self {
             trace_id,
             configuration,
-            logger,
         }
     }
 }
@@ -34,10 +28,6 @@ impl Context for ContextStandard {
 
     fn configuration(&self) -> &Arc<dyn Configuration + Send + Sync> {
         &self.configuration
-    }
-
-    fn logger(&self) -> &Arc<dyn Logger + Send + Sync> {
-        &self.logger
     }
 
     fn template_values(&self) -> Map<String, Value> {

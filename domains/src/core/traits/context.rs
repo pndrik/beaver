@@ -4,11 +4,13 @@
 use serde_json::{Map, Value};
 use std::{fmt::Debug, sync::Arc};
 
-use crate::core::traits::{Configuration, Logger};
+use crate::core::{models::LogAttributes, traits::Configuration};
 
 pub trait Context: Debug {
     fn trace_id(&self) -> &str;
     fn configuration(&self) -> &Arc<dyn Configuration + Send + Sync>;
-    fn logger(&self) -> &Arc<dyn Logger + Send + Sync>;
     fn template_values(&self) -> Map<String, Value>;
+    fn log_attributes(&self) -> LogAttributes {
+        LogAttributes::new(self.trace_id())
+    }
 }

@@ -6,7 +6,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde_json::{Value, json};
 
-use app_adapters::{configuration::ConfigurationMap, logger::LoggerRecording};
+use app_adapters::configuration::ConfigurationMap;
 use app_domains::{
     core::models::{AppContext, AppError},
     tools::models::{Call, CallValue, Schema, SchemaField, SchemaFieldType},
@@ -16,7 +16,6 @@ fn context() -> AppContext {
     AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
-        Arc::new(LoggerRecording::new()),
     )))
 }
 

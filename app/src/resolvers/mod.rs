@@ -10,6 +10,9 @@ pub(crate) use code_sandbox::*;
 mod context_factory;
 pub(crate) use context_factory::*;
 
+mod logging;
+pub(crate) use logging::*;
+
 mod flow_provider;
 pub(crate) use flow_provider::*;
 
@@ -24,3 +27,6 @@ pub(crate) use tools_provider::*;
 
 mod template_engine;
 pub(crate) use template_engine::*;
+
+#[cfg(test)]
+mod tests;

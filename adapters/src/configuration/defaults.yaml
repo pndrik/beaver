@@ -2,6 +2,7 @@ context:
   chroot: "/tmp"
 logger:
   level: "info"
+  provider: "stdout"
 configuration:
   cache:
     ttl: 60

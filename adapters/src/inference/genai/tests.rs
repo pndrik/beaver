@@ -14,13 +14,12 @@ use app_domains::{
 use genai::chat::ChatRole;
 
 use super::GenAi;
-use crate::{configuration::ConfigurationMap, logger::LoggerRecording};
+use crate::configuration::ConfigurationMap;
 
 fn context() -> AppContext {
     AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
-        Arc::new(LoggerRecording::new()),
     )))
 }
 

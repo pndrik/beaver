@@ -8,13 +8,12 @@ use app_domains::core::models::{AppContext, ErrorKind};
 use rmcp::{ClientLifecycleMode, model::ProtocolVersion};
 
 use super::{McpServer, McpSession};
-use crate::{configuration::ConfigurationMap, logger::LoggerRecording};
+use crate::configuration::ConfigurationMap;
 
 fn context() -> AppContext {
     AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
-        Arc::new(LoggerRecording::new()),
     )))
 }
 

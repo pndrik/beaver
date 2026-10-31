@@ -3,11 +3,9 @@
 
 use serde_json::{Map, Value, json};
 use tempfile::TempDir;
+use tracing::Level;
 
-use app_adapters::{
-    inference::ScriptedCall,
-    logger::{LoggerRecording, RecordedLevel},
-};
+use app_adapters::{inference::ScriptedCall, logging::Memory};
 use app_domains::{core::models::AppError, flows::models::Definition};
 
 use crate::support::{self, Fixture};
@@ -15,7 +13,7 @@ use crate::support::{self, Fixture};
 struct Run {
     result: Result<(), AppError>,
     calls: Vec<ScriptedCall>,
-    logger: std::sync::Arc<LoggerRecording>,
+    logger: Memory,
     /// The canonical global chroot.
     chroot: String,
     // Keeps the global chroot alive until the assertions ran.
@@ -164,7 +162,7 @@ async fn contexts_reach_later_prompts() {
         first
     );
     assert_eq!(run.calls[1].prompt, format!("reply 1: {}|2|user", first));
-    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
+    assert!(run.logger.messages(Level::WARN).is_empty());
 }
 
 #[tokio::test]
@@ -179,12 +177,7 @@ async fn missing_template_field_does_not_fail_the_flow() {
 
     run.result.unwrap();
     assert_eq!(run.calls[0].prompt, "title=<NULL>");
-    assert!(
-        run.logger
-            .messages(RecordedLevel::Warn)
-            .iter()
-            .any(|w| w.contains("Arguments.missing"))
-    );
+    assert!(undefined(&run.logger, "Arguments.missing"));
 }
 
 #[tokio::test]
@@ -280,7 +273,7 @@ async fn contexts_are_created_before_the_first_step() {
     // `later` exists before its first step, with an empty conversation.
     assert!(std::path::Path::new(&format!("{}/later", run.chroot)).is_dir());
     assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
-    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
+    assert!(run.logger.messages(Level::WARN).is_empty());
 }
 
 #[tokio::test]
@@ -303,11 +296,7 @@ async fn invalid_context_fails_before_any_step_runs_and_cleans_up() {
         "{}",
         err.internal_message
     );
-    assert!(!logged(
-        &run.logger,
-        RecordedLevel::Info,
-        "step 'first' started"
-    ));
+    assert!(!step_logged(&run.logger, "Step started", "first"));
     assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
 }
 
@@ -439,11 +428,17 @@ spec:
     assert!(!global.path().join("work").exists());
 }
 
-fn logged(logger: &LoggerRecording, level: RecordedLevel, text: &str) -> bool {
-    logger
-        .messages(level)
-        .iter()
-        .any(|message| message.contains(text))
+fn step_logged(logger: &Memory, message: &str, step: &str) -> bool {
+    logger.contains(Level::INFO, message, &[("step", step)])
+}
+
+/// Whether a template referenced the undefined value `path`.
+fn undefined(logger: &Memory, path: &str) -> bool {
+    logger.contains(
+        Level::WARN,
+        "Template references undefined value",
+        &[("path", path)],
+    )
 }
 
 #[tokio::test]
@@ -464,12 +459,8 @@ async fn false_when_skips_the_step() {
     run.result.unwrap();
     assert_eq!(run.calls.len(), 1);
     assert_eq!(run.calls[0].prompt, "<NULL>");
-    assert!(logged(&run.logger, RecordedLevel::Info, "step 'a' skipped"));
-    assert!(!logged(
-        &run.logger,
-        RecordedLevel::Info,
-        "step 'a' started"
-    ));
+    assert!(step_logged(&run.logger, "Step skipped", "a"));
+    assert!(!step_logged(&run.logger, "Step started", "a"));
 }
 
 #[tokio::test]
@@ -537,10 +528,10 @@ async fn loop_runs_max_times_and_warns() {
     run.result.unwrap();
     assert_eq!(run.calls.len(), 4);
     assert_eq!(run.calls[3].prompt, "3|reply 3: x");
-    assert!(logged(
-        &run.logger,
-        RecordedLevel::Warn,
-        "step 'l' stopped after max 3"
+    assert!(run.logger.contains(
+        Level::WARN,
+        "Loop stopped after max iterations",
+        &[("step", "l"), ("max", "3")]
     ));
 }
 
@@ -566,7 +557,7 @@ async fn loop_stops_when_until_is_true() {
     run.result.unwrap();
     assert_eq!(run.calls.len(), 3);
     assert_eq!(run.calls[2].prompt, "2|reply 2: x");
-    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
+    assert!(run.logger.messages(Level::WARN).is_empty());
 }
 
 #[tokio::test]
@@ -702,7 +693,7 @@ async fn typed_arguments_are_rendered() {
 
     run.result.unwrap();
     assert_eq!(run.calls[0].prompt, "ok|42|2.5|<NULL>");
-    assert!(logged(&run.logger, RecordedLevel::Warn, "'Arguments.opt'"));
+    assert!(undefined(&run.logger, "Arguments.opt"));
 }
 
 #[tokio::test]
@@ -725,17 +716,26 @@ async fn set_extracts_converts_and_falls_back() {
 
     run.result.unwrap();
     assert_eq!(run.calls[1].prompt, "2|0|1.5|42");
-    let warnings = run.logger.messages(RecordedLevel::Warn);
+    let warnings = run.logger.messages(Level::WARN);
     assert_eq!(warnings.len(), 2, "{:?}", warnings);
-    assert!(logged(
-        &run.logger,
-        RecordedLevel::Warn,
-        "Flow 'test_flow' step 'parse': variable 'missing'"
+    let invalid = "Invalid variable, using default";
+    assert!(run.logger.contains(
+        Level::WARN,
+        invalid,
+        &[
+            ("flow", "test_flow"),
+            ("step", "parse"),
+            ("variable", "missing")
+        ]
     ));
-    assert!(logged(
-        &run.logger,
-        RecordedLevel::Warn,
-        "variable 'fallback': 'abc' is not a float, using default 1.5"
+    assert!(run.logger.contains(
+        Level::WARN,
+        invalid,
+        &[
+            ("variable", "fallback"),
+            ("error", "'abc' is not a float"),
+            ("fallback", "1.5")
+        ]
     ));
 }
 
@@ -785,7 +785,7 @@ async fn variables_set_in_a_loop_drive_when_and_until() {
     run.result.unwrap();
     let prompts: Vec<&str> = run.calls.iter().map(|call| call.prompt.as_str()).collect();
     assert_eq!(prompts, ["i=2", "3"]);
-    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
+    assert!(run.logger.messages(Level::WARN).is_empty());
 }
 
 fn child() -> Definition {
@@ -823,11 +823,10 @@ async fn flow_step_runs_the_child_and_exposes_its_variables() {
     assert_eq!(prompts, ["parent", "child 21|<NULL>", "42"]);
     assert_eq!(run.calls[1].history, ["user"]);
     assert_eq!(run.calls[2].history, ["user", "assistant", "user"]);
-    assert!(logged(
-        &run.logger,
-        RecordedLevel::Info,
-        "Flow 'child' finished"
-    ));
+    assert!(
+        run.logger
+            .contains(Level::INFO, "Flow finished", &[("flow", "child")])
+    );
 }
 
 #[tokio::test]
@@ -919,9 +918,11 @@ async fn recursive_flow_steps_stop_at_the_depth_limit() {
     assert_eq!(err.translation_key, "flow_call_too_deep");
     let started = run
         .logger
-        .messages(RecordedLevel::Info)
+        .events()
         .iter()
-        .filter(|message| message.contains("Flow 'recursive' started"))
+        .filter(|event| {
+            event.message == "Flow started" && event.field("flow").as_deref() == Some("recursive")
+        })
         .count();
     assert_eq!(started, 9);
     assert!(run.calls.is_empty());
@@ -961,5 +962,5 @@ async fn pythagoras_example_calls_the_calculate_example() {
         "{}",
         prompts[3]
     );
-    assert!(run.logger.messages(RecordedLevel::Warn).is_empty());
+    assert!(run.logger.messages(Level::WARN).is_empty());
 }

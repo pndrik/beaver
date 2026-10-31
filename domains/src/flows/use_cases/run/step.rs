@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use std::{future::Future, pin::Pin};
+use tracing::debug;
 
 use crate::{
     core::models::{AppContext, AppError},
@@ -29,15 +30,11 @@ impl Flows {
                 .await
                 .map_err(|err| run.failed(step, err))?;
             if !runs {
-                ctx.logger()
-                    .info(ctx, &run.step_message(step, "skipped"))
-                    .await;
+                debug!(flow = %run.flow.metadata.name, step = %step.name, "Step skipped");
                 return Ok(());
             }
 
-            ctx.logger()
-                .info(ctx, &run.step_message(step, "started"))
-                .await;
+            debug!(flow = %run.flow.metadata.name, step = %step.name, "Step started");
 
             match &step.action {
                 Action::Loop(_) => self.r#loop(ctx, step, inference, tools, run).await?,
@@ -59,9 +56,7 @@ impl Flows {
                     .map_err(|err| run.failed(step, err))?,
             }
 
-            ctx.logger()
-                .info(ctx, &run.step_message(step, "finished"))
-                .await;
+            debug!(flow = %run.flow.metadata.name, step = %step.name, "Step finished");
             Ok(())
         })
     }

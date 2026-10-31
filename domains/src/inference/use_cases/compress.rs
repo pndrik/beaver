@@ -1,6 +1,8 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use tracing::debug;
+
 use crate::{
     app_error,
     core::models::{AppContext, AppError},
@@ -63,18 +65,13 @@ impl Inference {
             Conversation::new(ctx, system_prompt, agent, vec![], conversation.chroot())?;
         summarizer.insert_message(Message::user(user_message, summarizer.agent()), None);
 
-        ctx.logger()
-            .trace(
-                ctx,
-                &format!(
-                    "Compressing conversation of agent '{}' ({} tokens, {} messages) with '{}'",
-                    conversation.agent().metadata.name,
-                    conversation.tokens(),
-                    context.len(),
-                    summarizer.agent().model().id()
-                ),
-            )
-            .await;
+        debug!(
+            agent = %conversation.agent().metadata.name,
+            tokens = conversation.tokens(),
+            messages = context.len(),
+            model = %summarizer.agent().model().id(),
+            "Compressing conversation"
+        );
 
         let failed = |message: &str| {
             app_error!(

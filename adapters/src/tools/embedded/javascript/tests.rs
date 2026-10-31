@@ -8,7 +8,7 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use super::tools::Run;
-use crate::{configuration::ConfigurationMap, logger::LoggerRecording, tools::sandbox::Boa};
+use crate::{configuration::ConfigurationMap, tools::sandbox::Boa};
 use app_domains::{
     core::models::{AppContext, AppError},
     inference::models::{
@@ -24,7 +24,6 @@ fn context(configuration: ConfigurationMap) -> AppContext {
     AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(configuration),
-        Arc::new(LoggerRecording::new()),
     )))
 }
 

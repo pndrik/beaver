@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde_json::{Value, json};
+use tracing::Level;
 
-use app_adapters::logger::RecordedLevel;
 use app_domains::{
     core::models::ErrorKind,
     flows::models::{Definition, Hook},
@@ -122,17 +122,14 @@ async fn webhook_arguments_map_body_and_query() {
         .await
         .unwrap();
     assert_eq!(fixture.scripted.calls()[0].prompt, "Fix bug|<NULL>|<NULL>");
-    let warnings = logger.messages(RecordedLevel::Warn);
-    assert!(
-        warnings.iter().any(|w| w.contains("'Body.pr.title'")),
-        "{:?}",
-        warnings
-    );
-    assert!(
-        warnings.iter().any(|w| w.contains("'Query.mode'")),
-        "{:?}",
-        warnings
-    );
+    let undefined = "Template references undefined value";
+    for path in ["Body.pr.title", "Query.mode"] {
+        assert!(
+            logger.contains(Level::WARN, undefined, &[("path", path)]),
+            "{:?}",
+            logger.events()
+        );
+    }
 }
 
 #[tokio::test]

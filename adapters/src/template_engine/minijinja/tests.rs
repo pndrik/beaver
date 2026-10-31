@@ -4,27 +4,34 @@
 use crate::context::ContextStandard;
 use serde_json::{Value, json};
 use std::sync::Arc;
+use tracing::Level;
 
 use app_domains::core::{
     models::{AppContext, AppError},
-    traits::TemplateEngine,
+    traits::{Logging, TemplateEngine},
 };
 
 use super::MiniJinjaTemplateEngine;
-use crate::{
-    configuration::ConfigurationMap,
-    logger::{LoggerRecording, RecordedLevel},
-};
+use crate::{configuration::ConfigurationMap, logging::Memory};
 
-fn context(configuration: &[(&str, &str)]) -> (AppContext, Arc<LoggerRecording>) {
-    let logger = Arc::new(LoggerRecording::new());
+fn context(configuration: &[(&str, &str)]) -> (AppContext, Memory) {
     let configuration: ConfigurationMap = configuration.iter().copied().collect();
     let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(configuration),
-        logger.clone(),
     )));
+    let logger = Memory::new();
+    logger.init(&ctx, "trace").unwrap();
     (ctx, logger)
+}
+
+fn undefined_paths(logger: &Memory) -> Vec<String> {
+    logger
+        .events()
+        .into_iter()
+        .filter(|event| event.level == Level::WARN)
+        .filter_map(|event| event.field("path"))
+        .collect()
 }
 
 async fn render(template: &str, values: Value) -> (Result<String, AppError>, Vec<String>) {
@@ -32,7 +39,7 @@ async fn render(template: &str, values: Value) -> (Result<String, AppError>, Vec
     let result = MiniJinjaTemplateEngine::new(&ctx)
         .render(&ctx, template, &values)
         .await;
-    let warnings = logger.messages(RecordedLevel::Warn);
+    let warnings = undefined_paths(&logger);
     (result, warnings)
 }
 
@@ -48,7 +55,7 @@ async fn missing_leaf_renders_null_and_warns() {
     let (result, warnings) = render("[{{ Body.pr.title }}]", json!({"Body": {"pr": {}}})).await;
     assert_eq!(result.unwrap(), "[<NULL>]");
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains("'Body.pr.title'"));
+    assert!(warnings[0] == "Body.pr.title");
 }
 
 #[tokio::test]
@@ -56,7 +63,7 @@ async fn missing_intermediate_renders_null_and_warns_once() {
     let (result, warnings) = render("{{ Body.pr.title }} {{ Body.pr }}", json!({"Body": {}})).await;
     assert_eq!(result.unwrap(), "<NULL> <NULL>");
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains("'Body.pr'"));
+    assert!(warnings[0] == "Body.pr");
 }
 
 #[tokio::test]
@@ -64,7 +71,7 @@ async fn missing_root_renders_null_and_warns() {
     let (result, warnings) = render("{{ Variables.clone.output }}", json!({})).await;
     assert_eq!(result.unwrap(), "<NULL>");
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains("'Variables.clone.output'"));
+    assert!(warnings[0] == "Variables.clone.output");
 }
 
 #[tokio::test]
@@ -152,7 +159,7 @@ async fn last_of_a_missing_context_warns_once() {
     .await;
     assert_eq!(result.unwrap(), "<NULL> <NULL>");
     assert_eq!(warnings.len(), 1, "{:?}", warnings);
-    assert!(warnings[0].contains("'Contexts.missing'"));
+    assert!(warnings[0] == "Contexts.missing");
 }
 
 #[tokio::test]

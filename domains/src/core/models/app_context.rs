@@ -4,7 +4,8 @@
 use serde::{Serialize, Serializer};
 use std::sync::Arc;
 
-use crate::core::traits::{Configuration, Context, Logger};
+use super::LogAttributes;
+use crate::core::traits::{Configuration, Context};
 
 /// Cheap-clone handle over a `Context` implementation.
 #[derive(Debug, Clone)]
@@ -23,8 +24,8 @@ impl AppContext {
         self.0.configuration()
     }
 
-    pub fn logger(&self) -> &Arc<dyn Logger + Send + Sync> {
-        self.0.logger()
+    pub fn log_attributes(&self) -> LogAttributes {
+        self.0.log_attributes()
     }
 }
 

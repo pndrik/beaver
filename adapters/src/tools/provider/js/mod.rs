@@ -3,6 +3,7 @@
 
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
+use tracing::trace;
 
 use app_domains::{
     app_error,
@@ -146,12 +147,7 @@ impl ToolsProvider for JavascriptProvider {
         let output = self.sandbox.run(ctx, conversation.chroot(), run).await?;
 
         if !output.console.is_empty() {
-            ctx.logger()
-                .debug(
-                    ctx,
-                    &format!("Tool '{}' logged:\n{}", input.name, output.console),
-                )
-                .await;
+            trace!(tool = %input.name, console = %output.console, "Tool logged to console");
         }
 
         match output.result {

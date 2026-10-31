@@ -199,6 +199,22 @@ helm install beaver ./chart -f my-values.yaml
 
 [`chart/values.example.yaml`](chart/values.example.yaml) is a full working example — Anthropic as the inference provider, an Atlassian MCP server, Bitbucket/git JS tool config, the `reviewer` agent from the [Examples](#examples) above, and a `pr_review_flow` flow that checks out the pull request before reviewing it — copy it and adjust as needed.
 
+## Logging
+
+Beaver writes one JSON object per line to stdout. Data is in fields, and everything logged while handling a request, a CLI command or the boot carries the context's attributes under `ctx`:
+
+```json
+{"channel":"flow","ctx":{"trace_id":"5b0c…"},"flow":"review","level":"INFO","message":"Flow started","timestamp":"2026-10-31T10:00:00.123456Z"}
+{"channel":"access log","client_ip":"10.0.0.7","ctx":{"trace_id":"5b0c…"},"latency_ms":6.52,"level":"INFO","method":"POST","path":"/hooks/review","response_size":48,"status":200,"timestamp":"2026-10-31T10:00:00.130000Z","user_agent":"curl/8.4","version":"HTTP/1.1"}
+```
+
+| Setting | Default | |
+|---|---|---|
+| `logger.level` (`LOGGER__LEVEL`) | `info` | `trace`, `debug`, `info`, `warn`, `error` or `off`, for Beaver and its dependencies |
+| `logger.provider` (`LOGGER__PROVIDER`) | `stdout` | Where logs go |
+
+Tokens, query strings and request bodies are never logged; prompts, agent outputs and variable values only at `debug`.
+
 ## Security
 The AI tools out there are powerful but many of them are scary dangerous. With Beaver I took a different attempt restricting what an agent can do by default. 
 

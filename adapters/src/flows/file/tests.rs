@@ -3,23 +3,24 @@
 
 use crate::context::ContextStandard;
 use std::{fs, sync::Arc};
+use tracing::Level;
 
-use app_domains::{core::models::AppContext, flows::traits::FlowProvider};
-
-use super::File;
-use crate::{
-    configuration::ConfigurationMap,
-    logger::{LoggerRecording, RecordedLevel},
+use app_domains::{
+    core::{models::AppContext, traits::Logging},
+    flows::traits::FlowProvider,
 };
 
-fn context(configuration: &[(&str, &str)]) -> (AppContext, Arc<LoggerRecording>) {
-    let logger = Arc::new(LoggerRecording::new());
+use super::File;
+use crate::{configuration::ConfigurationMap, logging::Memory};
+
+fn context(configuration: &[(&str, &str)]) -> (AppContext, Memory) {
     let configuration: ConfigurationMap = configuration.iter().copied().collect();
     let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(configuration),
-        logger.clone(),
     )));
+    let logger = Memory::new();
+    logger.init(&ctx, "trace").unwrap();
     (ctx, logger)
 }
 
@@ -117,10 +118,15 @@ async fn skips_invalid_flows_with_a_warning() {
         .unwrap();
     assert_eq!(flow.metadata.name, "good");
 
-    let warnings = logger.messages(RecordedLevel::Warn);
+    let warnings: Vec<String> = logger
+        .events()
+        .into_iter()
+        .filter(|event| event.level == Level::WARN)
+        .filter_map(|event| event.field("flow"))
+        .collect();
     assert_eq!(warnings.len(), 2);
-    assert!(warnings.iter().any(|w| w.contains("'broken'")));
-    assert!(warnings.iter().any(|w| w.contains("'renamed'")));
+    assert!(warnings.iter().any(|w| w == "broken"));
+    assert!(warnings.iter().any(|w| w == "renamed"));
 }
 
 #[tokio::test]
@@ -189,5 +195,5 @@ async fn example_flows_are_valid() {
 
     let flows = File::new(&ctx).list(&ctx).await.unwrap();
     assert!(flows.iter().any(|f| f.metadata.name == "double_check"));
-    assert!(logger.messages(RecordedLevel::Warn).is_empty());
+    assert!(logger.messages(Level::WARN).is_empty());
 }

@@ -3,6 +3,7 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
+use tracing::warn;
 
 use app_domains::{
     app_error,
@@ -86,30 +87,14 @@ impl ToolsProvider for McpProvider {
         for server in servers {
             let mut session = McpSession::new(server.clone());
             if let Err(e) = session.start_session(ctx).await {
-                ctx.logger()
-                    .warn(
-                        ctx,
-                        &format!(
-                            "Failed to start session for MCP server '{}': {}",
-                            server.name, e.internal_message
-                        ),
-                    )
-                    .await;
+                warn!(server = %server.name, error = %e.internal_message, "Failed to start MCP session");
                 continue;
             }
 
             let server_tools = match session.list_tools(ctx).await {
                 Ok(tools) => tools,
                 Err(e) => {
-                    ctx.logger()
-                        .warn(
-                            ctx,
-                            &format!(
-                                "Failed to list tools from MCP server '{}': {}",
-                                server.name, e.internal_message
-                            ),
-                        )
-                        .await;
+                    warn!(server = %server.name, error = %e.internal_message, "Failed to list MCP tools");
                     continue;
                 }
             };

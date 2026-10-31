@@ -8,7 +8,6 @@ use app_adapters::{
     agent,
     configuration::ConfigurationMap,
     inference::Scripted,
-    logger::LoggerRecording,
     tools::{output_writer, provider::EchoProvider},
 };
 use app_domains::{
@@ -27,7 +26,6 @@ pub fn context() -> AppContext {
     AppContext::new(Arc::new(ContextStandard::new(
         "test-trace".to_string(),
         Arc::new(ConfigurationMap::default()),
-        Arc::new(LoggerRecording::new()),
     )))
 }
 

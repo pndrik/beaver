@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde_json::{Map, Value, json};
+use tracing::Instrument;
 
-use app_adapters::logger::LoggerRecording;
+use app_adapters::logging::Memory;
+use app_domains::core::traits::Logging;
 use app_domains::flows::models::{Definition, Hook};
 
 use crate::support::{self, TENANT_TRACE_ID};
@@ -31,13 +33,18 @@ spec:
     .unwrap()
 }
 
-fn assert_traced_by_getter(logger: &LoggerRecording) {
-    let logs = logger.logs();
-    assert!(!logs.is_empty());
+/// Logs carry `log_attributes()`, not the template values, and a custom `trace_id` can't
+/// override the real one.
+fn assert_traced_by_log_attributes(logger: &Memory) {
+    let events = logger.events();
+    let expected = json!({ "trace_id": TENANT_TRACE_ID, "tenant": "acme" });
+    assert!(!events.is_empty());
     assert!(
-        logs.iter().all(|log| log.trace == TENANT_TRACE_ID),
+        events
+            .iter()
+            .all(|event| event.ctx.clone().map(Value::Object) == Some(expected.clone())),
         "{:?}",
-        logs
+        events
     );
 }
 
@@ -55,11 +62,12 @@ async fn flow_steps_see_only_the_template_values() {
             &fixture.inference,
             &fixture.tools,
         )
+        .instrument(logger.context_span(&ctx))
         .await
         .unwrap();
 
     assert_eq!(fixture.scripted.calls()[0].prompt, "acme|<NULL>");
-    assert_traced_by_getter(&logger);
+    assert_traced_by_log_attributes(&logger);
 }
 
 #[tokio::test]
@@ -70,9 +78,10 @@ async fn webhook_arguments_see_only_the_template_values() {
     let Hook { arguments, .. } = fixture
         .flows
         .resolve_hook(&ctx, "w", "secret", &json!({}), &json!({}))
+        .instrument(logger.context_span(&ctx))
         .await
         .unwrap();
 
     assert_eq!(Value::Object(arguments), json!({ "mapped": "acme|<NULL>" }));
-    assert_traced_by_getter(&logger);
+    assert_traced_by_log_attributes(&logger);
 }

@@ -15,6 +15,7 @@ use rmcp::{
     },
 };
 use std::{collections::HashMap, str::FromStr, sync::Arc};
+use tracing::trace;
 
 use super::McpServer;
 use app_domains::{
@@ -222,16 +223,11 @@ impl McpSession {
         })?;
 
         if let Some(info) = client.peer_info() {
-            ctx.logger()
-                .debug(
-                    ctx,
-                    &format!(
-                        "MCP server '{}' negotiated protocol version {}",
-                        self.server.name,
-                        info.protocol_version.as_str()
-                    ),
-                )
-                .await;
+            trace!(
+                server = %self.server.name,
+                protocol_version = info.protocol_version.as_str(),
+                "MCP protocol version negotiated"
+            );
         }
 
         self.client = Some(client);

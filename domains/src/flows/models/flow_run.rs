@@ -3,6 +3,7 @@
 
 use serde_json::{Map, Value, json};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tracing::{trace, warn};
 
 use super::{Action, Definition, RunContext, Step};
 use crate::{
@@ -121,26 +122,19 @@ impl FlowRun {
                 Ok(value) => value,
                 Err(err) if err.translation_key == "flow_variable_invalid" => {
                     let fallback = variable.fallback();
-                    ctx.logger()
-                        .warn(
-                            ctx,
-                            &format!(
-                                "Flow '{}' step '{}': variable '{}': {}, using default {}",
-                                self.flow.metadata.name,
-                                step.name,
-                                name,
-                                err.internal_message,
-                                fallback
-                            ),
-                        )
-                        .await;
+                    warn!(
+                        flow = %self.flow.metadata.name,
+                        step = %step.name,
+                        variable = %name,
+                        error = %err.internal_message,
+                        fallback = %fallback,
+                        "Invalid variable, using default"
+                    );
                     fallback
                 }
                 Err(err) => return Err(err),
             };
-            ctx.logger()
-                .trace(ctx, &format!("[{} = {}]", name, value))
-                .await;
+            trace!(variable = %name, value = %value, "Variable set");
             self.variables.insert(name.clone(), value);
         }
         Ok(())

@@ -10,14 +10,14 @@ use app_adapters::{
     context::ContextStandard,
     flows,
     inference::Scripted,
-    logger::LoggerRecording,
+    logging::Memory,
     template_engine::MiniJinjaTemplateEngine,
     tools::{output_writer, provider::EchoProvider},
 };
 use app_domains::{
     core::{
-        models::AppContext,
-        traits::{Configuration, Context, Logger},
+        models::{AppContext, LogAttributes},
+        traits::{Configuration, Context, Logging},
     },
     flows::{Flows, models::Definition},
     inference::{
@@ -29,14 +29,14 @@ use app_domains::{
 
 pub const TRACE_ID: &str = "test-trace";
 
-pub fn context(chroot: &str) -> (AppContext, Arc<LoggerRecording>) {
-    let logger = Arc::new(LoggerRecording::new());
+pub fn context(chroot: &str) -> (AppContext, Memory) {
     let configuration: ConfigurationMap = [("context.chroot", chroot)].into_iter().collect();
     let ctx = AppContext::new(Arc::new(ContextStandard::new(
         TRACE_ID.to_string(),
         Arc::new(configuration),
-        logger.clone(),
     )));
+    let logger = Memory::new();
+    logger.init(&ctx, "trace").unwrap();
     (ctx, logger)
 }
 
@@ -46,7 +46,6 @@ pub const TENANT_TRACE_ID: &str = "tenant-trace";
 #[derive(Debug)]
 struct TenantContext {
     configuration: Arc<dyn Configuration + Send + Sync>,
-    logger: Arc<dyn Logger + Send + Sync>,
 }
 
 impl Context for TenantContext {
@@ -58,17 +57,20 @@ impl Context for TenantContext {
         &self.configuration
     }
 
-    fn logger(&self) -> &Arc<dyn Logger + Send + Sync> {
-        &self.logger
-    }
-
     fn template_values(&self) -> Map<String, Value> {
         Map::from_iter([("tenant".to_string(), Value::from("acme"))])
     }
+
+    fn log_attributes(&self) -> LogAttributes {
+        let mut attributes = LogAttributes::new(TENANT_TRACE_ID).with("tenant", "acme");
+        attributes
+            .custom
+            .insert("trace_id".to_string(), Value::from("spoofed"));
+        attributes
+    }
 }
 
-pub fn tenant_context() -> (AppContext, Arc<LoggerRecording>) {
-    let logger = Arc::new(LoggerRecording::new());
+pub fn tenant_context() -> (AppContext, Memory) {
     let configuration: ConfigurationMap = [(
         "context.chroot",
         std::env::temp_dir().to_string_lossy().as_ref(),
@@ -77,12 +79,13 @@ pub fn tenant_context() -> (AppContext, Arc<LoggerRecording>) {
     .collect();
     let ctx = AppContext::new(Arc::new(TenantContext {
         configuration: Arc::new(configuration),
-        logger: logger.clone(),
     }));
+    let logger = Memory::new();
+    logger.init(&ctx, "trace").unwrap();
     (ctx, logger)
 }
 
-pub fn temp_context() -> (AppContext, Arc<LoggerRecording>) {
+pub fn temp_context() -> (AppContext, Memory) {
     context(&std::env::temp_dir().to_string_lossy())
 }
 

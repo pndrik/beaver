@@ -1,23 +1,19 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use axum::extract::State;
-use axum::{
-    Router,
-    extract::Request,
-    http::{HeaderMap, StatusCode},
-    middleware::{self, Next},
-    response::{IntoResponse, Response},
-    routing::any,
-};
-use std::{collections::HashMap, io, sync::Arc, thread};
-use tokio::runtime::Builder;
+use axum::{Router, middleware, routing::any};
+use std::{io, net::SocketAddr, sync::Arc, thread};
+use tokio::{net::TcpListener, runtime::Builder};
+use tracing::{Instrument, info, warn};
 
-use app::App;
-use app_domains::core::models::{AppContext, AppError};
+use app_domains::core::{
+    fatal,
+    models::{AppContext, AppError},
+};
 
 mod extensions;
 mod hooks;
+mod middlewares;
 mod models;
 
 const MIN_WORKER_THREADS: usize = 6;
@@ -35,56 +31,6 @@ async fn get_bind_addr(ctx: &AppContext) -> Result<String, AppError> {
     Ok(format!("{}:{}", bind, port))
 }
 
-/// Header names are lowercase; repeated headers are joined with ", ", non-UTF-8 values are skipped.
-fn header_metadata(headers: &HeaderMap) -> HashMap<String, String> {
-    let mut metadata: HashMap<String, String> = HashMap::new();
-    for (name, value) in headers {
-        let Ok(value) = value.to_str() else { continue };
-        metadata
-            .entry(name.as_str().to_string())
-            .and_modify(|existing| {
-                existing.push_str(", ");
-                existing.push_str(value);
-            })
-            .or_insert_with(|| value.to_string());
-    }
-    metadata
-}
-
-async fn context_middleware(
-    State(application): State<Arc<App>>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    let ctx = match application
-        .get_context(None, header_metadata(req.headers()))
-        .await
-    {
-        Ok(ctx) => ctx,
-        Err(e) => {
-            let boot = application.boot_context();
-            boot.logger()
-                .error(
-                    boot,
-                    &format!("Failed to create request context: {}", e.internal_message),
-                )
-                .await;
-
-            let status = StatusCode::from_u16(e.kind.http_status())
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            return hooks::failure(status, status.canonical_reason().unwrap_or("Error"))
-                .into_response();
-        }
-    };
-
-    ctx.logger()
-        .info(&ctx, &format!("[{}] {}", req.method(), req.uri().path()))
-        .await;
-
-    req.extensions_mut().insert(ctx);
-    next.run(req).await
-}
-
 fn main() {
     let (worker_threads, parallelism_error) = determine_thread_count();
     let runtime = Builder::new_multi_thread()
@@ -92,57 +38,62 @@ fn main() {
         .thread_name("beaver-worker")
         .enable_all()
         .build()
-        .expect("Failed to create Tokio runtime");
+        .unwrap_or_else(|e| fatal("Failed to create Tokio runtime", &e));
 
     runtime.block_on(start(worker_threads, parallelism_error));
+}
+
+async fn listen(
+    ctx: &AppContext,
+    worker_threads: usize,
+    parallelism_error: Option<io::Error>,
+) -> TcpListener {
+    if let Some(e) = parallelism_error {
+        warn!(error = %e, "Failed to determine available parallelism");
+    }
+    info!(worker_threads, "Starting server");
+
+    let bind_addr = get_bind_addr(ctx)
+        .await
+        .unwrap_or_else(|e| fatal("Failed to get bind address", &e.internal_message));
+    let listener = TcpListener::bind(&bind_addr)
+        .await
+        .unwrap_or_else(|e| fatal("Failed to bind to address", &e));
+    info!(listen_addr = %bind_addr, "Web server listening");
+
+    listener
 }
 
 async fn start(worker_threads: usize, parallelism_error: Option<io::Error>) {
     let application = Arc::new(
         app::bootstrap()
             .await
-            .expect("Failed to initialize application"),
+            .unwrap_or_else(|e| fatal("Failed to bootstrap application", &e.internal_message)),
     );
 
     let ctx = application
-        .get_context(Some("boot-webhook".to_string()), HashMap::new())
+        .get_context(Some("boot-webhook".to_string()))
         .await
-        .expect("Failed to get application context");
+        .unwrap_or_else(|e| fatal("Failed to get application context", &e.internal_message));
 
-    if let Some(e) = parallelism_error {
-        ctx.logger()
-            .warn(
-                &ctx,
-                &format!("Failed to determine available parallelism: {}", e),
-            )
-            .await;
-    }
-    ctx.logger()
-        .info(
-            &ctx,
-            &format!("Starting server with {} worker threads", worker_threads),
-        )
+    let listener = listen(&ctx, worker_threads, parallelism_error)
+        .instrument(application.context_span(&ctx))
         .await;
-
-    let bind_addr = get_bind_addr(&ctx)
-        .await
-        .expect("Failed to get bind address");
-
-    let listener = tokio::net::TcpListener::bind(bind_addr)
-        .await
-        .expect("Failed to bind to address");
 
     let app_router = Router::new()
         .route("/hooks/{name}", any(hooks::handler))
         .with_state(application.clone())
         .layer(middleware::from_fn_with_state(
             application.clone(),
-            context_middleware,
+            middlewares::context_middleware,
         ));
 
     let router = Router::new()
         .route("/healthz", any(|| async { "OK" }))
         .merge(app_router);
 
-    axum::serve(listener, router).await.unwrap();
+    let service = router.into_make_service_with_connect_info::<SocketAddr>();
+    if let Err(e) = axum::serve(listener, service).await {
+        fatal("Web server failed", &e);
+    }
 }

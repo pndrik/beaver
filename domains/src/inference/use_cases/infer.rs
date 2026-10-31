@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use std::{future::Future, pin::Pin, sync::Arc};
+use tracing::warn;
 
 use crate::{
     app_error,
@@ -92,15 +93,11 @@ impl Inference {
                 tools.call_many(ctx, conversation, self, tool_calls).await?;
             }
 
-            ctx.logger()
-                .warn(
-                    ctx,
-                    &format!(
-                        "Maximum inference tool iterations ({}) exceeded",
-                        MAX_INFERENCE_TOOL_ITERATIONS
-                    ),
-                )
-                .await;
+            warn!(
+                agent = %conversation.agent().metadata.name,
+                max = MAX_INFERENCE_TOOL_ITERATIONS,
+                "Maximum inference tool iterations exceeded"
+            );
             conversation.insert_message(
                 Message::tool(
                     format!(

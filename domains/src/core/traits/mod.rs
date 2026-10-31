@@ -10,8 +10,8 @@ pub use context::*;
 mod context_factory;
 pub use context_factory::*;
 
-mod logger;
-pub use logger::*;
+mod logging;
+pub use logging::*;
 
 mod template_engine;
 pub use template_engine::*;

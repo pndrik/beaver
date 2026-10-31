@@ -1,7 +1,10 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::collections::HashMap;
+use tracing::Instrument;
+
+use app::App;
+use app_domains::core::{fatal, models::AppContext};
 
 mod conversation;
 
@@ -9,26 +12,32 @@ mod conversation;
 async fn main() {
     let application = app::bootstrap()
         .await
-        .expect("Failed to bootstrap application");
+        .unwrap_or_else(|e| fatal("Failed to bootstrap application", &e.internal_message));
 
     let ctx = application
-        .get_context(Some("cli".to_string()), HashMap::new())
+        .get_context(Some("cli".to_string()))
         .await
-        .expect("Failed to get application context");
+        .unwrap_or_else(|e| fatal("Failed to get application context", &e.internal_message));
 
+    run(&ctx, &application)
+        .instrument(application.context_span(&ctx))
+        .await;
+}
+
+async fn run(ctx: &AppContext, application: &App) {
     // TBD: Needs improvement
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 3 && args[1] == "conversation" {
         let agent = args[2].clone();
 
-        conversation::run_conversation(&ctx, &application, &agent)
+        conversation::run_conversation(ctx, application, &agent)
             .await
             .expect("Failed to run conversation");
     } else if args.len() >= 3 && args[1] == "tools" && args[2] == "list" {
         for tool in application
             .domains
             .tools
-            .list_all(&ctx)
+            .list_all(ctx)
             .await
             .expect("Failed to list tools")
         {
@@ -38,7 +47,7 @@ async fn main() {
         for agent in application
             .domains
             .inference
-            .agents_list(&ctx)
+            .agents_list(ctx)
             .await
             .expect("Failed to list agents")
         {

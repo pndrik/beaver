@@ -7,7 +7,7 @@ use std::{collections::HashMap, fs, sync::Arc};
 use serde_json::json;
 
 use super::JavascriptProvider;
-use crate::{configuration::ConfigurationMap, logger::LoggerRecording, tools::sandbox::Boa};
+use crate::{configuration::ConfigurationMap, tools::sandbox::Boa};
 use app_domains::{
     core::models::AppContext,
     inference::models::{
@@ -66,7 +66,6 @@ export { main };"#,
                 json!({ "greeting": "Hi" }),
             ),
         ])),
-        Arc::new(LoggerRecording::new()),
     )));
     let mut provider = JavascriptProvider::new(&ctx, Arc::new(Boa::new()));
     provider.reload(&ctx).await.unwrap();
@@ -128,7 +127,6 @@ async fn example_tools_load() {
             "tools.providers.javascript.path",
             json!(examples.to_string_lossy()),
         )])),
-        Arc::new(LoggerRecording::new()),
     )));
 
     let mut provider = JavascriptProvider::new(&ctx, Arc::new(Boa::new()));

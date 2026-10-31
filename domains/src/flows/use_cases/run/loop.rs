@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use std::{future::Future, pin::Pin};
+use tracing::warn;
 
 use crate::{
     core::models::{AppContext, AppError},
@@ -44,10 +45,12 @@ impl Flows {
                 }
 
                 if iterations >= arguments.max {
-                    let message = format!("stopped after max {} iterations", arguments.max);
-                    ctx.logger()
-                        .warn(ctx, &run.step_message(step, &message))
-                        .await;
+                    warn!(
+                        flow = %run.flow.metadata.name,
+                        step = %step.name,
+                        max = arguments.max,
+                        "Loop stopped after max iterations"
+                    );
                     break;
                 }
             }

@@ -7,11 +7,10 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
+use tracing::{Instrument, Span, error};
 
-use crate::extensions::AnyBody;
-use crate::models::Response;
+use crate::{extensions::AnyBody, models::Response};
 use app::App;
 use app_domains::core::models::{AppContext, ErrorKind};
 
@@ -60,27 +59,25 @@ pub(crate) async fn handler(
     };
 
     let app = Arc::clone(&application);
-    tokio::spawn(async move {
-        if let Err(err) = app
-            .domains
-            .flows
-            .run(
-                &ctx,
-                &hook.flow,
-                &hook.arguments,
-                &app.domains.inference,
-                &app.domains.tools,
-            )
-            .await
-        {
-            ctx.logger()
-                .error(
+    tokio::spawn(
+        async move {
+            if let Err(err) = app
+                .domains
+                .flows
+                .run(
                     &ctx,
-                    &format!("Hook '{}' failed: {}", name, err.internal_message),
+                    &hook.flow,
+                    &hook.arguments,
+                    &app.domains.inference,
+                    &app.domains.tools,
                 )
-                .await;
+                .await
+            {
+                error!(hook = %name, error = %err.internal_message, "Hook failed");
+            }
         }
-    });
+        .instrument(Span::current()),
+    );
 
     (
         StatusCode::OK,

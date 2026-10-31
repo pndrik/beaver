@@ -6,6 +6,6 @@ pub mod configuration;
 pub mod context;
 pub mod flows;
 pub mod inference;
-pub mod logger;
+pub mod logging;
 pub mod template_engine;
 pub mod tools;

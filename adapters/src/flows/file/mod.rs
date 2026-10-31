@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use async_trait::async_trait;
+use tracing::warn;
 
 use app_domains::{
     app_error,
@@ -130,12 +131,7 @@ impl FlowProvider for File {
             let flow = match self.load_flow(ctx, &flows_dir, &flow_name) {
                 Ok(flow) => flow,
                 Err(err) => {
-                    ctx.logger()
-                        .warn(
-                            ctx,
-                            &format!("Skipping flow '{}': {}", flow_name, err.internal_message),
-                        )
-                        .await;
+                    warn!(flow = %flow_name, error = %err.internal_message, "Skipping flow");
                     continue;
                 }
             };

@@ -8,6 +8,7 @@ use minijinja::{
     value::{Serde, Value as TemplateValue, ValueKind},
 };
 use serde_json::Value;
+use tracing::warn;
 
 use app_domains::{
     app_error,
@@ -155,15 +156,7 @@ impl TemplateEngine for MiniJinjaTemplateEngine {
         })?;
 
         for path in missing_paths(&env, tmpl.undeclared_variables(true), values) {
-            ctx.logger()
-                .warn(
-                    ctx,
-                    &format!(
-                        "Template references undefined value '{}', rendering {}",
-                        path, UNDEFINED_PLACEHOLDER
-                    ),
-                )
-                .await;
+            warn!(path = %path, placeholder = UNDEFINED_PLACEHOLDER, "Template references undefined value");
         }
 
         tmpl.render(minijinja::Value::from(Serde(values)))

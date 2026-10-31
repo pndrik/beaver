@@ -5,6 +5,7 @@ use std::{
     fs,
     path::{Component, Path, PathBuf},
 };
+use tracing::warn;
 
 use crate::{
     app_error,
@@ -130,11 +131,6 @@ pub(super) async fn cleanup(ctx: &AppContext, chroot: &Path) {
     }
 
     if let Err(e) = fs::remove_dir_all(chroot) {
-        ctx.logger()
-            .warn(
-                ctx,
-                &format!("Failed to delete chroot '{}': {}", chroot.display(), e),
-            )
-            .await;
+        warn!(chroot = %chroot.display(), error = %e, "Failed to delete chroot");
     }
 }

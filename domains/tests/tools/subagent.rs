@@ -5,8 +5,7 @@ use app_adapters::context::ContextStandard;
 use std::{collections::HashMap, sync::Arc};
 
 use app_adapters::{
-    agent, configuration::ConfigurationMap, inference::Scripted, logger::LoggerRecording,
-    tools::output_writer,
+    agent, configuration::ConfigurationMap, inference::Scripted, tools::output_writer,
 };
 use app_domains::{
     core::models::AppContext,
@@ -55,7 +54,6 @@ async fn fixture() -> Fixture {
     let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
-        Arc::new(LoggerRecording::new()),
     )));
     let scripted = Arc::new(Scripted::new());
     let parent = agent(

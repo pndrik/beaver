@@ -9,3 +9,6 @@ pub use app_error::*;
 
 mod literal_or_regex;
 pub use literal_or_regex::*;
+
+mod log_attributes;
+pub use log_attributes::*;

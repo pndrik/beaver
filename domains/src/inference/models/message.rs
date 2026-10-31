@@ -12,7 +12,6 @@ pub enum MessageType {
     System,
     User,
     Tool,
-    /// Summary of the messages before it, see `Conversation::context`.
     Summary,
 }
 

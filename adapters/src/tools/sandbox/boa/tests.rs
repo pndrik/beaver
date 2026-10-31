@@ -8,7 +8,7 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use super::{Boa, fetch::FilteredFetcher, module_loader::ChrootModuleLoader};
-use crate::{configuration::ConfigurationMap, logger::LoggerRecording};
+use crate::configuration::ConfigurationMap;
 use app_domains::{
     core::models::{AppContext, AppError},
     tools::{
@@ -21,7 +21,6 @@ fn context() -> AppContext {
     AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
-        Arc::new(LoggerRecording::new()),
     )))
 }
 
