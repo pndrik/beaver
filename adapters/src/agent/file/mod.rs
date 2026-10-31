@@ -22,7 +22,7 @@ impl File {
     }
 
     async fn get_agents_dir(&self, ctx: &AppContext) -> Result<String, AppError> {
-        ctx.configuration
+        ctx.configuration()
             .get_string(ctx, CONFIGURATION_AGENTS_DIR)
             .await
     }

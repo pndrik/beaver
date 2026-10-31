@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use crate::context::ContextStandard;
 use std::sync::Arc;
 
 use app_domains::{
@@ -16,11 +17,11 @@ use super::GenAi;
 use crate::{configuration::ConfigurationMap, logger::LoggerRecording};
 
 fn context() -> AppContext {
-    AppContext::new(
+    AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
         Arc::new(LoggerRecording::new()),
-    )
+    )))
 }
 
 fn max_tokens(model: Model, max_tokens: u64, reasoning_effort: ReasoningEffort) -> Option<u32> {

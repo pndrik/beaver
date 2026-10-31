@@ -13,7 +13,7 @@ use app_domains::{
 const CONFIGURATION_FLOWS_PROVIDER: &str = "flows.provider";
 
 async fn get_provider_name(ctx: &AppContext) -> Result<String, AppError> {
-    ctx.configuration
+    ctx.configuration()
         .get_string(ctx, CONFIGURATION_FLOWS_PROVIDER)
         .await
 }

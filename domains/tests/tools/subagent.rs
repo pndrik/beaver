@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use app_adapters::context::ContextStandard;
 use std::{collections::HashMap, sync::Arc};
 
 use app_adapters::{
@@ -51,11 +52,11 @@ struct Fixture {
 /// A conversation with `parent`, which may invoke the subagent `helper`.
 async fn fixture() -> Fixture {
     let chroot = tempfile::tempdir().unwrap();
-    let ctx = AppContext::new(
+    let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
         Arc::new(LoggerRecording::new()),
-    );
+    )));
     let scripted = Arc::new(Scripted::new());
     let parent = agent(
         "parent",

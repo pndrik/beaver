@@ -71,7 +71,7 @@ impl InferenceProvider for GenAi {
 
         let usage = &chat_response.usage;
         let details = usage.prompt_tokens_details.as_ref();
-        ctx.logger
+        ctx.logger()
             .trace(
                 ctx,
                 &format!(

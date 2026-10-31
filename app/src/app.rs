@@ -1,13 +1,12 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use app_adapters::configuration::ConfigurationUniversal;
 use app_domains::{
     core::{
         models::{AppContext, AppError},
-        traits::Logger,
+        traits::ContextFactory,
     },
     inference::models::Conversation,
 };
@@ -16,18 +15,25 @@ use crate::Domains;
 
 pub struct App {
     pub domains: Domains,
-    pub logger: Arc<dyn Logger + Send + Sync>,
+    boot_context: AppContext,
+    context_factory: Arc<dyn ContextFactory + Send + Sync>,
 }
 
 impl App {
     pub async fn new(
-        ctx: &AppContext,
-        logger: Arc<dyn Logger + Send + Sync>,
+        boot_context: AppContext,
+        context_factory: Arc<dyn ContextFactory + Send + Sync>,
     ) -> Result<Self, AppError> {
         Ok(Self {
-            domains: Domains::new(ctx).await?,
-            logger,
+            domains: Domains::new(&boot_context).await?,
+            boot_context,
+            context_factory,
         })
+    }
+
+    /// The context the application was bootstrapped with, for use outside of a request.
+    pub fn boot_context(&self) -> &AppContext {
+        &self.boot_context
     }
 
     pub async fn new_conversation(
@@ -35,7 +41,10 @@ impl App {
         ctx: &AppContext,
         agent_name: &str,
     ) -> Result<Conversation, AppError> {
-        let chroot = ctx.configuration.get_string(ctx, "context.chroot").await?;
+        let chroot = ctx
+            .configuration()
+            .get_string(ctx, "context.chroot")
+            .await?;
         self.domains
             .inference
             .new_conversation(ctx, agent_name, &self.domains.tools, &chroot)
@@ -53,9 +62,13 @@ impl App {
             .await
     }
 
-    pub async fn get_context(&self, id: String) -> Result<AppContext, AppError> {
-        let configuration = Arc::new(ConfigurationUniversal::new()?);
-
-        Ok(AppContext::new(id, configuration, self.logger.clone()))
+    pub async fn get_context(
+        &self,
+        trace_id: Option<String>,
+        metadata: HashMap<String, String>,
+    ) -> Result<AppContext, AppError> {
+        self.context_factory
+            .create(&self.boot_context, trace_id, metadata)
+            .await
     }
 }

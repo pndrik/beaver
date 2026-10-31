@@ -31,7 +31,7 @@ impl Flows {
         query: &Value,
     ) -> Result<Hook, AppError> {
         if token.is_empty() {
-            ctx.logger
+            ctx.logger()
                 .warn(ctx, &format!("Empty token for hook '{}'", name))
                 .await;
             return Err(unauthorized(ctx));
@@ -40,7 +40,7 @@ impl Flows {
         let flow = match self.flow_provider.get_by_webhook(ctx, name, token).await {
             Ok(Some(flow)) => flow,
             Ok(None) => {
-                ctx.logger
+                ctx.logger()
                     .warn(
                         ctx,
                         &format!("No flow found for hook '{}' or invalid token", name),
@@ -49,7 +49,7 @@ impl Flows {
                 return Err(unauthorized(ctx));
             }
             Err(err) => {
-                ctx.logger
+                ctx.logger()
                     .error(
                         ctx,
                         &format!(
@@ -68,7 +68,7 @@ impl Flows {
         match arguments {
             Ok(arguments) => Ok(Hook { flow, arguments }),
             Err(err) => {
-                ctx.logger
+                ctx.logger()
                     .warn(
                         ctx,
                         &format!("Hook '{}' rejected: {}", name, err.internal_message),

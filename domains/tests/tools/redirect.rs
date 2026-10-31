@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use app_adapters::context::ContextStandard;
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
@@ -98,11 +99,11 @@ struct Fixture {
 async fn fixture(redirect_output: bool) -> Fixture {
     let chroot = tempfile::tempdir().unwrap();
     std::fs::create_dir(chroot.path().join("out")).unwrap();
-    let ctx = AppContext::new(
+    let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
         Arc::new(LoggerRecording::new()),
-    );
+    )));
 
     let mut agent = Agent::new(
         "agent".to_string(),

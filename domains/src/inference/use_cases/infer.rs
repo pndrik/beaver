@@ -92,7 +92,7 @@ impl Inference {
                 tools.call_many(ctx, conversation, self, tool_calls).await?;
             }
 
-            ctx.logger
+            ctx.logger()
                 .warn(
                     ctx,
                     &format!(

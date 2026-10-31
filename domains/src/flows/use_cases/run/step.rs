@@ -29,13 +29,13 @@ impl Flows {
                 .await
                 .map_err(|err| run.failed(step, err))?;
             if !runs {
-                ctx.logger
+                ctx.logger()
                     .info(ctx, &run.step_message(step, "skipped"))
                     .await;
                 return Ok(());
             }
 
-            ctx.logger
+            ctx.logger()
                 .info(ctx, &run.step_message(step, "started"))
                 .await;
 
@@ -59,7 +59,7 @@ impl Flows {
                     .map_err(|err| run.failed(step, err))?,
             }
 
-            ctx.logger
+            ctx.logger()
                 .info(ctx, &run.step_message(step, "finished"))
                 .await;
             Ok(())

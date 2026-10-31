@@ -3,6 +3,7 @@
 
 //! Tests for the flows domain, wired with offline adapters.
 
+mod context;
 mod hook;
 mod model;
 mod run;

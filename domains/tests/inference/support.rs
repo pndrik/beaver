@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use app_adapters::context::ContextStandard;
 use std::sync::Arc;
 
 use app_adapters::{
@@ -23,11 +24,11 @@ use app_domains::{
 };
 
 pub fn context() -> AppContext {
-    AppContext::new(
+    AppContext::new(Arc::new(ContextStandard::new(
         "test-trace".to_string(),
         Arc::new(ConfigurationMap::default()),
         Arc::new(LoggerRecording::new()),
-    )
+    )))
 }
 
 pub fn compression(tokens: Option<u64>, messages: Option<u64>) -> Compression {

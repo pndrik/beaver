@@ -13,7 +13,7 @@ use app_domains::{
 const CONFIGURATION_AGENTS_PROVIDER: &str = "agents.provider";
 
 async fn get_provider_name(ctx: &AppContext) -> Result<String, AppError> {
-    ctx.configuration
+    ctx.configuration()
         .get_string(ctx, CONFIGURATION_AGENTS_PROVIDER)
         .await
 }

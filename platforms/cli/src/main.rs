@@ -1,6 +1,8 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use std::collections::HashMap;
+
 mod conversation;
 
 #[tokio::main]
@@ -10,7 +12,7 @@ async fn main() {
         .expect("Failed to bootstrap application");
 
     let ctx = application
-        .get_context("cli".to_string())
+        .get_context(Some("cli".to_string()), HashMap::new())
         .await
         .expect("Failed to get application context");
 

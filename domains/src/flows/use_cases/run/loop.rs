@@ -45,7 +45,7 @@ impl Flows {
 
                 if iterations >= arguments.max {
                     let message = format!("stopped after max {} iterations", arguments.max);
-                    ctx.logger
+                    ctx.logger()
                         .warn(ctx, &run.step_message(step, &message))
                         .await;
                     break;

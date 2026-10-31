@@ -31,7 +31,7 @@ impl Flows {
             .template_engine
             .render(ctx, &arguments.prompt, &values)
             .await?;
-        ctx.logger
+        ctx.logger()
             .trace(ctx, &format!("[prompt → {}]: {}", agent, prompt))
             .await;
 
@@ -43,7 +43,7 @@ impl Flows {
             .and_then(|message| message.as_agent())
             .and_then(|message| message.content.as_deref())
             .unwrap_or_default();
-        ctx.logger
+        ctx.logger()
             .trace(ctx, &format!("[{}]: {}", agent, output))
             .await;
 

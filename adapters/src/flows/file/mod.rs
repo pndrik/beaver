@@ -28,7 +28,7 @@ impl File {
 
     async fn get_flows_dir(&self, ctx: &AppContext) -> Result<Option<String>, AppError> {
         let path = ctx
-            .configuration
+            .configuration()
             .get_string(ctx, CONFIGURATION_FLOWS_DIR)
             .await?;
         let path = path.trim_end_matches('/');
@@ -130,7 +130,7 @@ impl FlowProvider for File {
             let flow = match self.load_flow(ctx, &flows_dir, &flow_name) {
                 Ok(flow) => flow,
                 Err(err) => {
-                    ctx.logger
+                    ctx.logger()
                         .warn(
                             ctx,
                             &format!("Skipping flow '{}': {}", flow_name, err.internal_message),

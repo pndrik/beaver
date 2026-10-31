@@ -9,13 +9,13 @@ use app_domains::{
 
 impl Zen {
     async fn get_endpoint(&self, ctx: &AppContext) -> Result<String, AppError> {
-        ctx.configuration
+        ctx.configuration()
             .get_string(ctx, CONFIGURATION_ENDPOINT)
             .await
     }
 
     async fn get_apikey(&self, ctx: &AppContext) -> Result<String, AppError> {
-        ctx.configuration
+        ctx.configuration()
             .get_string(ctx, CONFIGURATION_APIKEY)
             .await
     }

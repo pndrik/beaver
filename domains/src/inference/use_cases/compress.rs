@@ -63,7 +63,7 @@ impl Inference {
             Conversation::new(ctx, system_prompt, agent, vec![], conversation.chroot())?;
         summarizer.insert_message(Message::user(user_message, summarizer.agent()), None);
 
-        ctx.logger
+        ctx.logger()
             .trace(
                 ctx,
                 &format!(

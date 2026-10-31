@@ -19,14 +19,14 @@ use app_domains::{
 impl GenAi {
     async fn get_endpoint(&self, ctx: &AppContext) -> Result<Endpoint, AppError> {
         let endpoint = ctx
-            .configuration
+            .configuration()
             .get_string(ctx, &self.configuration_key_endpoint)
             .await?;
         Ok(Endpoint::from_owned(endpoint))
     }
 
     async fn get_apikey(&self, ctx: &AppContext) -> Result<String, AppError> {
-        ctx.configuration
+        ctx.configuration()
             .get_string(ctx, &self.configuration_key_api_key)
             .await
     }

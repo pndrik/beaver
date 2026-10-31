@@ -73,7 +73,7 @@ pub(crate) async fn handler(
             )
             .await
         {
-            ctx.logger
+            ctx.logger()
                 .error(
                     &ctx,
                     &format!("Hook '{}' failed: {}", name, err.internal_message),
@@ -95,7 +95,7 @@ fn unauthorized(message: &str) -> (StatusCode, Json<Response>) {
     failure(StatusCode::UNAUTHORIZED, message)
 }
 
-fn failure(status: StatusCode, message: &str) -> (StatusCode, Json<Response>) {
+pub(crate) fn failure(status: StatusCode, message: &str) -> (StatusCode, Json<Response>) {
     (
         status,
         Json(Response {

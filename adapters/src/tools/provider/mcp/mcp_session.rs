@@ -222,7 +222,7 @@ impl McpSession {
         })?;
 
         if let Some(info) = client.peer_info() {
-            ctx.logger
+            ctx.logger()
                 .debug(
                     ctx,
                     &format!(

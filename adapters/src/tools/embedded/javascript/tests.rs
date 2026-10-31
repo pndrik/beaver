@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use crate::context::ContextStandard;
 use std::{collections::HashMap, fs, sync::Arc};
 
 use serde_json::json;
@@ -20,11 +21,11 @@ use app_domains::{
 };
 
 fn context(configuration: ConfigurationMap) -> AppContext {
-    AppContext::new(
+    AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(configuration),
         Arc::new(LoggerRecording::new()),
-    )
+    )))
 }
 
 fn conversation(ctx: &AppContext, chroot: &TempDir) -> Conversation {

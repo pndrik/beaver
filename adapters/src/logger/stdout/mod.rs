@@ -59,7 +59,7 @@ impl LoggerAdapter {
 
     pub async fn refresh_level(&mut self, ctx: &AppContext) -> Result<(), AppError> {
         let level_str = ctx
-            .configuration
+            .configuration()
             .get_string(ctx, LOG_LEVEL_CONFIGURATION_KEY)
             .await?;
 
@@ -72,7 +72,7 @@ impl LoggerAdapter {
         let message = LogMessage {
             timestamp: chrono::Utc::now().to_rfc3339(),
             level,
-            trace: ctx.trace_id.clone(),
+            trace: ctx.trace_id().to_string(),
             message: message.to_string(),
         };
 

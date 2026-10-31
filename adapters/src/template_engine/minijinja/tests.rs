@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use crate::context::ContextStandard;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -18,7 +19,11 @@ use crate::{
 fn context(configuration: &[(&str, &str)]) -> (AppContext, Arc<LoggerRecording>) {
     let logger = Arc::new(LoggerRecording::new());
     let configuration: ConfigurationMap = configuration.iter().copied().collect();
-    let ctx = AppContext::new("test".to_string(), Arc::new(configuration), logger.clone());
+    let ctx = AppContext::new(Arc::new(ContextStandard::new(
+        "test".to_string(),
+        Arc::new(configuration),
+        logger.clone(),
+    )));
     (ctx, logger)
 }
 

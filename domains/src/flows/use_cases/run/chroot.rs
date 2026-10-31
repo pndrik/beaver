@@ -53,7 +53,10 @@ fn resolve_existing_prefix(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 pub(super) async fn global_chroot(ctx: &AppContext) -> Result<PathBuf, AppError> {
-    let chroot = ctx.configuration.get_string(ctx, "context.chroot").await?;
+    let chroot = ctx
+        .configuration()
+        .get_string(ctx, "context.chroot")
+        .await?;
     Path::new(&chroot)
         .canonicalize()
         .map_err(|e| invalid(ctx, format!("Invalid global chroot '{}': {}", chroot, e)))
@@ -127,7 +130,7 @@ pub(super) async fn cleanup(ctx: &AppContext, chroot: &Path) {
     }
 
     if let Err(e) = fs::remove_dir_all(chroot) {
-        ctx.logger
+        ctx.logger()
             .warn(
                 ctx,
                 &format!("Failed to delete chroot '{}': {}", chroot.display(), e),

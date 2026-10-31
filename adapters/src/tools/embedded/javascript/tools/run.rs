@@ -56,7 +56,7 @@ impl Run {
 }
 
 async fn limit(ctx: &AppContext, key: &str) -> Option<u64> {
-    let value = ctx.configuration.get_int(ctx, key).await.ok()?;
+    let value = ctx.configuration().get_int(ctx, key).await.ok()?;
     u64::try_from(value).ok().filter(|value| *value > 0)
 }
 

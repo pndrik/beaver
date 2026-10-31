@@ -42,7 +42,7 @@ impl McpProvider {
     }
 
     async fn get_servers(&self, ctx: &AppContext) -> Result<Vec<McpServer>, AppError> {
-        ctx.configuration
+        ctx.configuration()
             .get_json_value(ctx, MCP_SERVERS_CONFIGURATION_KEY)
             .await?
             .as_array()
@@ -86,7 +86,7 @@ impl ToolsProvider for McpProvider {
         for server in servers {
             let mut session = McpSession::new(server.clone());
             if let Err(e) = session.start_session(ctx).await {
-                ctx.logger
+                ctx.logger()
                     .warn(
                         ctx,
                         &format!(
@@ -101,7 +101,7 @@ impl ToolsProvider for McpProvider {
             let server_tools = match session.list_tools(ctx).await {
                 Ok(tools) => tools,
                 Err(e) => {
-                    ctx.logger
+                    ctx.logger()
                         .warn(
                             ctx,
                             &format!(

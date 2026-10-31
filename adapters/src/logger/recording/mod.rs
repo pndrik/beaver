@@ -52,7 +52,7 @@ impl LoggerRecording {
     fn record(&self, level: RecordedLevel, ctx: &AppContext, message: &str) {
         self.logs.lock().unwrap().push(RecordedLog {
             level,
-            trace: ctx.trace_id.clone(),
+            trace: ctx.trace_id().to_string(),
             message: message.to_string(),
         });
     }

@@ -22,7 +22,7 @@ impl Flows {
         Box::pin(async move {
             let flow = Arc::clone(&run.flow);
             let flow_name = &flow.metadata.name;
-            ctx.logger
+            ctx.logger()
                 .info(ctx, &format!("Flow '{}' started", flow_name))
                 .await;
 
@@ -40,7 +40,7 @@ impl Flows {
             }
 
             if result.is_ok() {
-                ctx.logger
+                ctx.logger()
                     .info(ctx, &format!("Flow '{}' finished", flow_name))
                     .await;
             }

@@ -12,7 +12,7 @@ use app_domains::{
 const GIT_REPOSITORIES_CONFIGURATION_KEY: &str = "tools.configuration.git.repositories";
 
 async fn get_repositories(ctx: &AppContext) -> Result<Vec<Repository>, AppError> {
-    ctx.configuration
+    ctx.configuration()
         .get_json_value(ctx, GIT_REPOSITORIES_CONFIGURATION_KEY)
         .await?
         .as_array()

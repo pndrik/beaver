@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use crate::context::ContextStandard;
 use std::{collections::HashMap, fs, sync::Arc};
 
 use serde_json::json;
@@ -53,7 +54,7 @@ export { main };"#,
     )
     .unwrap();
 
-    let ctx = AppContext::new(
+    let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::from_iter([
             (
@@ -66,7 +67,7 @@ export { main };"#,
             ),
         ])),
         Arc::new(LoggerRecording::new()),
-    );
+    )));
     let mut provider = JavascriptProvider::new(&ctx, Arc::new(Boa::new()));
     provider.reload(&ctx).await.unwrap();
 
@@ -121,14 +122,14 @@ async fn example_tools_load() {
     };
 
     let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/tools");
-    let ctx = AppContext::new(
+    let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::from_iter([(
             "tools.providers.javascript.path",
             json!(examples.to_string_lossy()),
         )])),
         Arc::new(LoggerRecording::new()),
-    );
+    )));
 
     let mut provider = JavascriptProvider::new(&ctx, Arc::new(Boa::new()));
     provider.reload(&ctx).await.unwrap();

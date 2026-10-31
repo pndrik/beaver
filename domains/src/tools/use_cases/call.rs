@@ -162,7 +162,7 @@ impl Tools {
         inference: &Inference,
         call: &Call,
     ) -> Result<(), AppError> {
-        ctx.logger
+        ctx.logger()
             .trace(
                 ctx,
                 &format!(
@@ -177,7 +177,7 @@ impl Tools {
             match get_permission_for_tool(ctx, &conversation.agent().tools, &call.name) {
                 Ok(p) => p,
                 Err(err) => {
-                    ctx.logger
+                    ctx.logger()
                         .warn(
                             ctx,
                             &format!(
@@ -209,7 +209,7 @@ impl Tools {
                         .await?
                 }
                 Err(err) => {
-                    ctx.logger
+                    ctx.logger()
                         .warn(
                             ctx,
                             &format!("Tool '{}' failed with: {}", call.name, err.internal_message),
@@ -234,7 +234,7 @@ impl Tools {
                 .call_subagent_tool(ctx, conversation, permissions, call, inference)
                 .await
             {
-                ctx.logger
+                ctx.logger()
                     .warn(
                         ctx,
                         &format!("Tool '{}' failed with: {}", call.name, err.internal_message),
@@ -253,7 +253,7 @@ impl Tools {
             return Ok(());
         }
 
-        ctx.logger
+        ctx.logger()
             .warn(ctx, &format!("Tool '{}' not found", call.name))
             .await;
         add_tool_message_to_conversation(

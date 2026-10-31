@@ -15,7 +15,7 @@ use app_domains::{
 impl JavascriptProvider {
     pub(super) async fn get_tools_path(&self, ctx: &AppContext) -> Result<String, AppError> {
         let path = ctx
-            .configuration
+            .configuration()
             .get_string(ctx, CONFIGURATION_SKILLS_DIR)
             .await?;
 
@@ -50,7 +50,7 @@ impl JavascriptProvider {
         name: &str,
     ) -> Result<Value, AppError> {
         let tool_configuration = ctx
-            .configuration
+            .configuration()
             .get_map(
                 ctx,
                 &format!("{}.js_{}", CONFIGURATION_SKILL_CONFIGURATION, name),

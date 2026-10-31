@@ -1,6 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use app_adapters::context::ContextStandard;
 use std::{collections::HashMap, sync::Arc};
 
 use serde_json::{Value, json};
@@ -12,11 +13,11 @@ use app_domains::{
 };
 
 fn context() -> AppContext {
-    AppContext::new(
+    AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
         Arc::new(LoggerRecording::new()),
-    )
+    )))
 }
 
 fn parse(schema: Value) -> Result<Schema, AppError> {

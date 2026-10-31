@@ -21,7 +21,7 @@ async fn add_provider_if_enabled(
     ) -> Result<Arc<dyn ToolsProvider + Send + Sync>, AppError>,
 ) -> Result<(), AppError> {
     if ctx
-        .configuration
+        .configuration()
         .get_bool(
             ctx,
             format!("{}.{}.enabled", CONFIGURATION_PROVIDERS, provider_name).as_str(),

@@ -5,11 +5,12 @@ use axum::extract::State;
 use axum::{
     Router,
     extract::Request,
+    http::{HeaderMap, StatusCode},
     middleware::{self, Next},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::any,
 };
-use std::{io, sync::Arc, thread};
+use std::{collections::HashMap, io, sync::Arc, thread};
 use tokio::runtime::Builder;
 
 use app::App;
@@ -28,10 +29,26 @@ fn determine_thread_count() -> (usize, Option<io::Error>) {
 }
 
 async fn get_bind_addr(ctx: &AppContext) -> Result<String, AppError> {
-    let port = ctx.configuration.get_int(&ctx, "webhooks.port").await?;
-    let bind = ctx.configuration.get_string(&ctx, "webhooks.bind").await?;
+    let port = ctx.configuration().get_int(ctx, "webhooks.port").await?;
+    let bind = ctx.configuration().get_string(ctx, "webhooks.bind").await?;
 
     Ok(format!("{}:{}", bind, port))
+}
+
+/// Header names are lowercase; repeated headers are joined with ", ", non-UTF-8 values are skipped.
+fn header_metadata(headers: &HeaderMap) -> HashMap<String, String> {
+    let mut metadata: HashMap<String, String> = HashMap::new();
+    for (name, value) in headers {
+        let Ok(value) = value.to_str() else { continue };
+        metadata
+            .entry(name.as_str().to_string())
+            .and_modify(|existing| {
+                existing.push_str(", ");
+                existing.push_str(value);
+            })
+            .or_insert_with(|| value.to_string());
+    }
+    metadata
 }
 
 async fn context_middleware(
@@ -39,13 +56,28 @@ async fn context_middleware(
     mut req: Request,
     next: Next,
 ) -> Response {
-    let id = uuid::Uuid::new_v4().to_string();
-    let ctx = application
-        .get_context(id)
+    let ctx = match application
+        .get_context(None, header_metadata(req.headers()))
         .await
-        .expect("Failed to get application context");
+    {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            let boot = application.boot_context();
+            boot.logger()
+                .error(
+                    boot,
+                    &format!("Failed to create request context: {}", e.internal_message),
+                )
+                .await;
 
-    ctx.logger
+            let status = StatusCode::from_u16(e.kind.http_status())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            return hooks::failure(status, status.canonical_reason().unwrap_or("Error"))
+                .into_response();
+        }
+    };
+
+    ctx.logger()
         .info(&ctx, &format!("[{}] {}", req.method(), req.uri().path()))
         .await;
 
@@ -73,19 +105,19 @@ async fn start(worker_threads: usize, parallelism_error: Option<io::Error>) {
     );
 
     let ctx = application
-        .get_context("boot-webhook".to_string())
+        .get_context(Some("boot-webhook".to_string()), HashMap::new())
         .await
         .expect("Failed to get application context");
 
     if let Some(e) = parallelism_error {
-        ctx.logger
+        ctx.logger()
             .warn(
                 &ctx,
                 &format!("Failed to determine available parallelism: {}", e),
             )
             .await;
     }
-    ctx.logger
+    ctx.logger()
         .info(
             &ctx,
             &format!("Starting server with {} worker threads", worker_threads),

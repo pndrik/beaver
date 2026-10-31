@@ -3,6 +3,7 @@
 
 pub mod agent;
 pub mod configuration;
+pub mod context;
 pub mod flows;
 pub mod inference;
 pub mod logger;

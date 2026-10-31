@@ -155,7 +155,7 @@ impl TemplateEngine for MiniJinjaTemplateEngine {
         })?;
 
         for path in missing_paths(&env, tmpl.undeclared_variables(true), values) {
-            ctx.logger
+            ctx.logger()
                 .warn(
                     ctx,
                     &format!(

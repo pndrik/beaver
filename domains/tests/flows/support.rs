@@ -1,11 +1,13 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
+use serde_json::{Map, Value};
 use std::sync::Arc;
 
 use app_adapters::{
     agent,
     configuration::ConfigurationMap,
+    context::ContextStandard,
     flows,
     inference::Scripted,
     logger::LoggerRecording,
@@ -13,7 +15,10 @@ use app_adapters::{
     tools::{output_writer, provider::EchoProvider},
 };
 use app_domains::{
-    core::models::AppContext,
+    core::{
+        models::AppContext,
+        traits::{Configuration, Context, Logger},
+    },
     flows::{Flows, models::Definition},
     inference::{
         Inference,
@@ -27,11 +32,53 @@ pub const TRACE_ID: &str = "test-trace";
 pub fn context(chroot: &str) -> (AppContext, Arc<LoggerRecording>) {
     let logger = Arc::new(LoggerRecording::new());
     let configuration: ConfigurationMap = [("context.chroot", chroot)].into_iter().collect();
-    let ctx = AppContext::new(
+    let ctx = AppContext::new(Arc::new(ContextStandard::new(
         TRACE_ID.to_string(),
         Arc::new(configuration),
         logger.clone(),
-    );
+    )));
+    (ctx, logger)
+}
+
+pub const TENANT_TRACE_ID: &str = "tenant-trace";
+
+/// A context whose public values hide the trace id and expose a tenant.
+#[derive(Debug)]
+struct TenantContext {
+    configuration: Arc<dyn Configuration + Send + Sync>,
+    logger: Arc<dyn Logger + Send + Sync>,
+}
+
+impl Context for TenantContext {
+    fn trace_id(&self) -> &str {
+        TENANT_TRACE_ID
+    }
+
+    fn configuration(&self) -> &Arc<dyn Configuration + Send + Sync> {
+        &self.configuration
+    }
+
+    fn logger(&self) -> &Arc<dyn Logger + Send + Sync> {
+        &self.logger
+    }
+
+    fn template_values(&self) -> Map<String, Value> {
+        Map::from_iter([("tenant".to_string(), Value::from("acme"))])
+    }
+}
+
+pub fn tenant_context() -> (AppContext, Arc<LoggerRecording>) {
+    let logger = Arc::new(LoggerRecording::new());
+    let configuration: ConfigurationMap = [(
+        "context.chroot",
+        std::env::temp_dir().to_string_lossy().as_ref(),
+    )]
+    .into_iter()
+    .collect();
+    let ctx = AppContext::new(Arc::new(TenantContext {
+        configuration: Arc::new(configuration),
+        logger: logger.clone(),
+    }));
     (ctx, logger)
 }
 

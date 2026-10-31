@@ -121,7 +121,7 @@ impl FlowRun {
                 Ok(value) => value,
                 Err(err) if err.translation_key == "flow_variable_invalid" => {
                     let fallback = variable.fallback();
-                    ctx.logger
+                    ctx.logger()
                         .warn(
                             ctx,
                             &format!(
@@ -138,7 +138,7 @@ impl FlowRun {
                 }
                 Err(err) => return Err(err),
             };
-            ctx.logger
+            ctx.logger()
                 .trace(ctx, &format!("[{} = {}]", name, value))
                 .await;
             self.variables.insert(name.clone(), value);

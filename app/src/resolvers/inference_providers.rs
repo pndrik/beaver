@@ -18,7 +18,7 @@ async fn add_provider_if_enabled(
     provider_constructor: impl Fn(&AppContext) -> Arc<dyn InferenceProvider + Send + Sync>,
 ) {
     if ctx
-        .configuration
+        .configuration()
         .get_bool(
             ctx,
             format!("{}.{}.enabled", CONFIGURATION_PROVIDERS, provider_name).as_str(),

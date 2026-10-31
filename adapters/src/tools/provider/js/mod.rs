@@ -146,7 +146,7 @@ impl ToolsProvider for JavascriptProvider {
         let output = self.sandbox.run(ctx, conversation.chroot(), run).await?;
 
         if !output.console.is_empty() {
-            ctx.logger
+            ctx.logger()
                 .debug(
                     ctx,
                     &format!("Tool '{}' logged:\n{}", input.name, output.console),

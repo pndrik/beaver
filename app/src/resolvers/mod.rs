@@ -7,6 +7,9 @@ pub(crate) use agent_provider::*;
 mod code_sandbox;
 pub(crate) use code_sandbox::*;
 
+mod context_factory;
+pub(crate) use context_factory::*;
+
 mod flow_provider;
 pub(crate) use flow_provider::*;
 
