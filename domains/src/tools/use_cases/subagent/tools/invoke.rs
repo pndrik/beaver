@@ -29,6 +29,7 @@ struct Arguments {
 
 pub(in crate::tools::use_cases::subagent) struct Invoke;
 
+#[allow(clippy::too_many_lines)]
 #[async_trait]
 impl SubagentTool for Invoke {
     fn name(&self) -> &'static str {
@@ -122,9 +123,9 @@ impl SubagentTool for Invoke {
         conversation.remove_tool(subagent::INVOKE);
         conversation.add_tool(leave::tool());
 
-        let chroot = conversation.chroot().to_string();
+        let chroot = conversation.chroot().clone();
         let mut subagent_conversation = inference
-            .new_conversation(ctx, &arguments.name, tools, &chroot)
+            .new_conversation(ctx, &arguments.name, tools, chroot)
             .await?;
         subagent_conversation.insert_message(
             Message::user(arguments.prompt, subagent_conversation.agent()),

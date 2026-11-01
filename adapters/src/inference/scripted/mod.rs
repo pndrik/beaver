@@ -2,7 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use async_trait::async_trait;
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, PoisonError},
+};
 
 use app_domains::{
     core::models::{AppContext, AppError},
@@ -39,7 +42,10 @@ impl Scripted {
     }
 
     pub fn calls(&self) -> Vec<ScriptedCall> {
-        self.calls.lock().unwrap().clone()
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -80,19 +86,22 @@ impl InferenceProvider for Scripted {
             .map(|content| content.chars().count() as u64)
             .sum();
 
-        self.calls.lock().unwrap().push(ScriptedCall {
-            agent: conversation.agent().metadata.name.clone(),
-            model: conversation.agent().model().clone(),
-            options: options.clone(),
-            system_prompt: system_prompt.to_string(),
-            chroot: conversation.chroot().to_string(),
-            prompt: prompt.clone(),
-            history,
-        });
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ScriptedCall {
+                agent: conversation.agent().metadata.name.clone(),
+                model: conversation.agent().model().clone(),
+                options: options.clone(),
+                system_prompt: system_prompt.to_string(),
+                chroot: conversation.chroot().root().to_string(),
+                prompt: prompt.clone(),
+                history,
+            });
 
         let (content, tool_calls) = match scripted_tool_call(conversation.last()) {
             Some(call) => (None, vec![call]),
-            None => (Some(format!("reply {}: {}", user_messages, prompt)), vec![]),
+            None => (Some(format!("reply {user_messages}: {prompt}")), vec![]),
         };
         let output_tokens = content.as_deref().map_or(0, |c| c.chars().count() as u64);
         conversation.insert_message(

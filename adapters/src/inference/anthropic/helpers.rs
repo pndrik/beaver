@@ -29,7 +29,7 @@ impl Anthropic {
 
         let client = reqwest::Client::new();
         let resp = client
-            .get(format!("{}/models", endpoint.trim_end_matches("/")))
+            .get(format!("{}/models", endpoint.trim_end_matches('/')))
             .header("X-Api-Key", api_key)
             .header("anthropic-version", "2023-06-01")
             .send()
@@ -38,7 +38,7 @@ impl Anthropic {
                 app_error!(
                     Internal,
                     "inference_failed",
-                    &format!("Failed to list available models: {}", e),
+                    &format!("Failed to list available models: {e}"),
                     ctx.clone()
                 )
             })?;
@@ -48,7 +48,7 @@ impl Anthropic {
             app_error!(
                 Internal,
                 "inference_failed",
-                &format!("Failed to parse response body: {}", e),
+                &format!("Failed to parse response body: {e}"),
                 ctx.clone()
             )
         })?;
@@ -57,10 +57,7 @@ impl Anthropic {
             return Err(app_error!(
                 Internal,
                 "inference_failed",
-                &format!(
-                    "Failed to list available models: HTTP {} - {}",
-                    status, body
-                ),
+                &format!("Failed to list available models: HTTP {status} - {body}"),
                 ctx.clone()
             ));
         }
@@ -83,7 +80,7 @@ impl Anthropic {
                 model
                     .get("id")
                     .and_then(|id| id.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
             })
             .collect::<Vec<String>>())
     }

@@ -3,9 +3,7 @@
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::{fs, path::Path};
 
-use super::super::permissions;
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
@@ -63,49 +61,17 @@ impl Tool for Mkdir {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = permissions::absolute_path(ctx, conversation, &permissions, "/")?;
-        let sub_path_sanitized = args.path.trim_start_matches('/');
-        let full_path = path.join(sub_path_sanitized);
+        let path = permissions.scoped_path(ctx, &args.path)?;
+        conversation
+            .chroot()
+            .mkdir(ctx, path.as_str(), true)
+            .await?;
 
-        if !permissions::check_scope(&permissions, full_path.to_str().unwrap_or("")) {
-            return Err(app_error!(
-                Unauthorized,
-                "tool_failed",
-                &format!(
-                    "Path '{}' is not within allowed scopes: {:?}",
-                    full_path.display(),
-                    permissions.scopes
-                ),
-                ctx.clone()
-            ));
-        }
-
-        create_directory(ctx, &full_path)?;
-
-        Ok(format!(
-            "Created directory '{}'",
-            path.display()
-                .to_string()
-                .strip_prefix(conversation.chroot())
-                .unwrap_or("/")
-        ))
+        Ok(format!("Created directory '{path}'"))
     }
-}
-
-fn create_directory(ctx: &AppContext, path: &Path) -> Result<(), AppError> {
-    fs::create_dir_all(path).map_err(|e| {
-        app_error!(
-            Internal,
-            "tool_failed",
-            &format!("Failed to create directory '{}': {}", path.display(), e),
-            ctx.clone()
-        )
-    })?;
-
-    Ok(())
 }

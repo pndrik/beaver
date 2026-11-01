@@ -89,7 +89,7 @@ spec:
 - **Steps** run in order; the first failing step stops the flow. Step names must be identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`) and unique. Every agent and tool step names a declared `context`; `loop`, `set` and `flow` steps have none.
 - **`agent` steps** send the rendered `prompt` to the context's agent. **`tool` steps** call `tool` directly with the rendered `arguments` and the given `scopes`, without an LLM.
 - **Contexts** are declared once under `spec.contexts`, keyed by an identifier name, each with one `agent` and an optional `chroot`. A context is a conversation plus a working directory: steps on the same context share both, so a later agent step continues the earlier conversation and a tool step's result is appended to it. Every declared context must be used by a step. All contexts are created when the run starts, before the first step, so an unknown agent or an invalid chroot fails the run before any work is done. This also happens for contexts whose steps all end up skipped.
-- **`chroot.path`** is resolved against the global `context.chroot` and must stay inside it. `create` creates it if it is missing, `delete` removes it when the flow ends, whether it succeeded or not. Without `chroot` the global chroot is used. Chroot paths are rendered when the run starts, so they only see `Arguments`, `Ctx` and `Flow`.
+- **`chroot.path`** is a path in the [file system](#file-system), relative (`runs/x`) or absolute (`/runs/x`), both resolved against its root, and must stay inside it, also through symlinks. `create` creates it if it is missing, `delete` removes it when the flow ends, whether it succeeded or not; the root itself can't be deleted. Without `chroot` the whole file system is the chroot. Chroot paths are rendered when the run starts, so they only see `Arguments`, `Ctx` and `Flow`.
 
 #### Arguments
 
@@ -148,7 +148,7 @@ A missing value, at any depth, renders as `<NULL>` and logs a warning naming the
 
 Tool outputs land in the conversation and use up the context window. Two features keep large data out of it.
 
-**Output redirection.** With `tools.redirect_output: true` in an agent, every provider tool it is offered gets an optional `redirect_to_file` argument. The full output is written to that absolute path in the chroot, replacing the file, and the conversation only gets a receipt: `Output written to '/out/prs.json' (48213 bytes, 912 lines)`. The tool message still shows the name and all arguments. The parent directory must exist, and the path must not contain `..` or lead outside the chroot through a symlink. A failing tool writes nothing. Tools that define their own `redirect_to_file`, subagent tools and flow `tool` steps are not redirected. Without `redirect_output`, using the argument fails.
+**Output redirection.** With `tools.redirect_output: true` in an agent, every provider tool it is offered gets an optional `harness_redirect_to_file` argument. The full output is written to that absolute path in the chroot, replacing the file, and the tool message only shows the name, all arguments and a receipt: `Output written to '/out/prs.json' (48213 bytes, 912 lines)`. The parent directory must exist, and the path must not contain `..` or lead outside the chroot through a symlink. A failing tool writes nothing. A tool argument of the same name is replaced. Subagent tools are not redirected, flow `tool` steps drop the argument and write nothing. Without `redirect_output`, using the argument fails.
 
 **`javascript_run`.** An embedded tool that runs JavaScript the agent writes, so it can filter and aggregate data in code. Pass exactly one of:
 
@@ -160,7 +160,7 @@ The result is every `console.*` call as a line, followed by the value: strings a
 | Global | Description |
 | --- | --- |
 | `fs.readFile(path)` | Content of a file as a string. |
-| `fs.readDir(path)` | Entry names, directories end with `/`. |
+| `fs.readDir(path)` | Entry names, directories end with `/`. Symlinks are not followed. |
 | `fs.writeFile(path, content)`, `fs.appendFile(path, content)` | Replace or append to a file, the parent directory must exist. |
 | `fetch(url, options)` | Only defined if the permission has `web:` scopes. |
 
@@ -215,11 +215,23 @@ Beaver writes one JSON object per line to stdout. Data is in fields, and everyth
 
 Tokens, query strings and request bodies are never logged; prompts, agent outputs and variable values only at `debug`.
 
+## File system
+
+Everything agents and flows do with files (file and git tools, `javascript_run`, JS tool `fs`, output redirection, flow chroots) goes through one file system. Each conversation only sees its chroot, `/` is its root.
+
+| Setting | Default | |
+|---|---|---|
+| `file_system.provider` (`FILE_SYSTEM__PROVIDER`) | `disk` | `disk`, or `memory` (lost on exit, git tools don't work) |
+| `file_system.disk.root` (`FILE_SYSTEM__DISK__ROOT`) | `/tmp` | Host directory that holds all chroots. It must exist. |
+
+The disk provider can't leave its root: paths with `..` and symlinks leading outside, absolute ones included, are refused. Symlinks it creates are stored relative. Agent and flow definitions and JS tools are read from their own paths, not from the file system.
+
 ## Security
 The AI tools out there are powerful but many of them are scary dangerous. With Beaver I took a different attempt restricting what an agent can do by default. 
 
 - **Explicit allow-listing** — an agent can only call tools listed in its own `permissions.tools`; nothing is available by default.
-- **Chroot-confined** — the embedded tools resolve every path against a configured `chroot` and reject anything outside it.
+- **Chroot-confined** — all file access goes through the [file system](#file-system), which can't leave `file_system.disk.root`. Each conversation is narrowed to its chroot: paths are resolved through symlinks and rejected if they lead outside, deleting removes symlinks instead of their targets, and the chroot itself can't be deleted.
+- **Contained git** — git tools only open repositories whose git directory, worktree and objects lie inside the repository directory (no `gitdir:` files or `core.worktree` pointing elsewhere, no alternates or config includes), ignore system and global git config, check out symlinks as regular files and clone only from `https://`, `ssh://` or `user@host:path` URLs.
 - **Confined scripts** — `javascript_run` only reads, writes and imports files inside the chroot and has no `fetch` unless its permission has `web:<regex>` scopes.
 - **Scoped JavaScript tools** — each JS tool declares in its `package.json` what it may access (see [`examples/tools/bitbucket_pr/package.json`](examples/tools/bitbucket_pr/package.json) or [`examples/tools/slack/package.json`](examples/tools/slack/package.json)); everything else is rejected, and without scopes a tool has neither `fetch` nor `fs`. Tools only import modules from their own directory, and file access is always confined to the calling agent's chroot:
 

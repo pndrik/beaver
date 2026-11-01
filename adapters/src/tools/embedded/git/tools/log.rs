@@ -95,8 +95,7 @@ impl Tool for Log {
             SchemaField::new(
                 SchemaFieldType::Integer,
                 &format!(
-                    "Maximum number of commits to list. Defaults to {}, at most {}.",
-                    DEFAULT_LIMIT, MAX_LIMIT
+                    "Maximum number of commits to list. Defaults to {DEFAULT_LIMIT}, at most {MAX_LIMIT}."
                 ),
                 None,
             ),
@@ -116,22 +115,14 @@ impl Tool for Log {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = permissions::existing_repo_path(ctx, conversation, &permissions, &args.path)?;
-        let path_str = path.to_str().ok_or_else(|| {
-            app_error!(
-                Validation,
-                "tool_failed",
-                &format!("Path '{}' is not valid UTF-8", args.path),
-                ctx.clone()
-            )
-        })?;
+        let local = permissions::repository(ctx, conversation, &permissions, &args.path).await?;
 
-        let commits = GitRepository::local(path_str)
+        let commits = GitRepository::local(local.path())
             .log(
                 args.revision.as_deref().unwrap_or("HEAD"),
                 args.file.as_deref(),

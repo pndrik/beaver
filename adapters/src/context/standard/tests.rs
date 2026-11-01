@@ -25,7 +25,7 @@ async fn generates_unique_trace_ids() {
     let a = factory.create(&parent, None).await.unwrap();
     let b = factory.create(&parent, None).await.unwrap();
 
-    assert!(!a.trace_id().is_empty());
+    assert_ne!(a.trace_id(), "");
     assert_ne!(a.trace_id(), "parent");
     assert_ne!(a.trace_id(), b.trace_id());
 }

@@ -87,22 +87,14 @@ impl Tool for Show {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = permissions::existing_repo_path(ctx, conversation, &permissions, &args.path)?;
-        let path_str = path.to_str().ok_or_else(|| {
-            app_error!(
-                Validation,
-                "tool_failed",
-                &format!("Path '{}' is not valid UTF-8", args.path),
-                ctx.clone()
-            )
-        })?;
+        let local = permissions::repository(ctx, conversation, &permissions, &args.path).await?;
 
-        let commit = GitRepository::local(path_str)
+        let commit = GitRepository::local(local.path())
             .show(&args.revision, args.file.as_deref())
             .map_err(|e| {
                 app_error!(

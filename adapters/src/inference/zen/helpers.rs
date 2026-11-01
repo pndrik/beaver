@@ -29,7 +29,7 @@ impl Zen {
 
         let client = reqwest::Client::new();
         let resp = client
-            .get(format!("{}/models", endpoint.trim_end_matches("/")))
+            .get(format!("{}/models", endpoint.trim_end_matches('/')))
             .bearer_auth(&api_key)
             .send()
             .await
@@ -37,7 +37,7 @@ impl Zen {
                 app_error!(
                     Internal,
                     "inference_failed",
-                    &format!("Failed to list available models: {}", e),
+                    &format!("Failed to list available models: {e}"),
                     ctx.clone()
                 )
             })?;
@@ -47,7 +47,7 @@ impl Zen {
             app_error!(
                 Internal,
                 "inference_failed",
-                &format!("Failed to parse response body: {}", e),
+                &format!("Failed to parse response body: {e}"),
                 ctx.clone()
             )
         })?;
@@ -56,10 +56,7 @@ impl Zen {
             return Err(app_error!(
                 Internal,
                 "inference_failed",
-                &format!(
-                    "Failed to list available models: HTTP {} - {}",
-                    status, body
-                ),
+                &format!("Failed to list available models: HTTP {status} - {body}"),
                 ctx.clone()
             ));
         }
@@ -82,7 +79,7 @@ impl Zen {
                 model
                     .get("id")
                     .and_then(|id| id.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
             })
             .collect::<Vec<String>>())
     }

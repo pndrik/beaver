@@ -1,72 +1,36 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::path::{Path, PathBuf};
-
 use app_domains::{
-    app_error,
-    core::models::{AppContext, AppError},
+    core::models::{AppContext, AppError, file},
     inference::models::Conversation,
     tools::models::ToolPermission,
 };
 
-pub(super) fn check_scope(permissions: &ToolPermission, path: &str) -> bool {
-    if permissions.scopes.is_empty() {
-        return true;
-    }
-
-    for scope in &permissions.scopes {
-        if path.starts_with(scope) {
-            return true;
-        }
-    }
-
-    false
-}
-
-pub(super) fn absolute_path(
+/// `path` resolved in the chroot, if the scopes allow both.
+pub(super) async fn resolve(
     ctx: &AppContext,
     conversation: &Conversation,
     permissions: &ToolPermission,
     path: &str,
-) -> Result<PathBuf, AppError> {
-    if path.contains("..") {
-        return Err(app_error!(
-            Validation,
-            "tool_failed",
-            &format!("Path must not contain '..': '{}'", path),
-            ctx.clone()
-        ));
-    }
+) -> Result<file::Path, AppError> {
+    permissions.scoped_path(ctx, path)?;
+    let resolved = conversation.chroot().resolve(ctx, path).await?;
+    permissions.scoped_path(ctx, resolved.as_str())
+}
 
-    if !path.starts_with('/') {
-        return Err(app_error!(
-            Validation,
-            "tool_failed",
-            &format!("Path must be absolute: '{}'", path),
-            ctx.clone()
-        ));
-    }
-
-    if !check_scope(permissions, path) {
-        return Err(app_error!(
-            Unauthorized,
-            "tool_failed",
-            &format!(
-                "Path '{}' is not within allowed scopes: {:?}",
-                path, permissions.scopes
-            ),
-            ctx.clone()
-        ));
-    }
-
-    let absolute_path = conversation.get_absolute_path(ctx, path)?;
-    Path::new(&absolute_path).canonicalize().map_err(|e| {
-        app_error!(
-            Validation,
-            "tool_failed",
-            &format!("Invalid path '{}': {}", path, e),
-            ctx.clone()
-        )
-    })
+/// `path` with its parent resolved in the chroot and the last component as it
+/// is, if the scopes allow both. For operations on a symlink itself.
+pub(super) async fn leaf(
+    ctx: &AppContext,
+    conversation: &Conversation,
+    permissions: &ToolPermission,
+    path: &str,
+) -> Result<file::Path, AppError> {
+    let parsed = permissions.scoped_path(ctx, path)?;
+    let (Some(parent), Some(name)) = (parsed.parent(), parsed.file_name()) else {
+        return Ok(parsed);
+    };
+    let parent = conversation.chroot().resolve(ctx, parent.as_str()).await?;
+    permissions.scoped_path(ctx, parent.child(ctx, name)?.as_str())
 }

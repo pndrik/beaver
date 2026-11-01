@@ -80,15 +80,15 @@ impl Fetcher for FilteredFetcher {
             }))
             .build()
             .map_err(JsError::from_rust)?;
-        let reqwest_req = reqwest::Request::try_from(req).map_err(JsError::from_rust)?;
-        let reqwest_res = client
-            .execute(reqwest_req)
+        let reqwest_request = reqwest::Request::try_from(req).map_err(JsError::from_rust)?;
+        let reqwest_response = client
+            .execute(reqwest_request)
             .await
             .map_err(JsError::from_rust)?;
 
-        let status = reqwest_res.status();
-        let headers = reqwest_res.headers().clone();
-        let bytes = reqwest_res.bytes().await.map_err(JsError::from_rust)?;
+        let status = reqwest_response.status();
+        let headers = reqwest_response.headers().clone();
+        let bytes = reqwest_response.bytes().await.map_err(JsError::from_rust)?;
         let mut builder = http::Response::builder().status(status.as_u16());
 
         for k in headers.keys() {

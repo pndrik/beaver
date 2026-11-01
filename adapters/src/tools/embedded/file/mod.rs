@@ -4,7 +4,11 @@
 use crate::tools::provider::embedded::EmbeddedToolSet;
 
 mod permissions;
+mod read_state;
 mod tools;
+
+#[cfg(test)]
+mod tests;
 
 const NAME: &str = "file";
 const DESCRIPTION: &str = "A tool for reading/writing files and listing directories.";
@@ -12,7 +16,7 @@ const DESCRIPTION: &str = "A tool for reading/writing files and listing director
 pub struct File;
 
 impl File {
-    pub fn new() -> EmbeddedToolSet {
+    pub fn tool_set() -> EmbeddedToolSet {
         EmbeddedToolSet::new(
             NAME,
             DESCRIPTION,

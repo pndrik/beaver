@@ -11,18 +11,15 @@ fn new_message(conversation: &Conversation, internal_message: &Message) -> Optio
     let name = internal_message.name();
     let message = match internal_message.message_type() {
         MessageType::Agent if name != conversation.agent().metadata.name => ChatMessage::user(
-            format!("<subagent name=\"{}\">\n{}\n</subagent>", name, content),
+            format!("<subagent name=\"{name}\">\n{content}\n</subagent>"),
         ),
         MessageType::Agent => ChatMessage::assistant(content),
         MessageType::System => ChatMessage::system(content),
         MessageType::User => ChatMessage::user(content),
         // Many models either don't support tool messages or treat them not in a way we want them to treat them.
-        MessageType::Tool => {
-            ChatMessage::user(format!("<tool_result>\n{}\n</tool_result>", content))
-        }
+        MessageType::Tool => ChatMessage::user(format!("<tool_result>\n{content}\n</tool_result>")),
         MessageType::Summary => ChatMessage::user(format!(
-            "<conversation_summary>\n{}\n</conversation_summary>",
-            content
+            "<conversation_summary>\n{content}\n</conversation_summary>"
         )),
     };
 
@@ -30,7 +27,7 @@ fn new_message(conversation: &Conversation, internal_message: &Message) -> Optio
 }
 
 impl GenAi {
-    pub(super) fn get_chat_request(&self, conversation: &Conversation) -> ChatRequest {
+    pub(super) fn get_chat_request(conversation: &Conversation) -> ChatRequest {
         let mut chat_req = ChatRequest::default();
 
         let system_prompt = conversation.system_prompt();

@@ -8,21 +8,25 @@ use app_domains::{
     core::models::{AppContext, AppError},
 };
 
-pub(super) fn list_directories(ctx: &AppContext, path: &str) -> Result<Vec<String>, AppError> {
+pub(super) fn list_yaml_files(ctx: &AppContext, path: &str) -> Result<Vec<String>, AppError> {
     Ok(fs::read_dir(path)
         .map_err(|_| {
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Failed to list directory: {}", path),
+                &format!("Failed to list directory: {path}"),
                 ctx.clone()
             )
         })?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.path())
-        .filter(|p| p.is_dir() || (p.is_file() && p.extension().map_or(false, |ext| ext == "yaml")))
+        .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "yaml"))
         .map(|p| p.display().to_string())
         .collect())
+}
+
+pub(super) fn file_exists(path: &str) -> bool {
+    fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
 }
 
 pub(super) fn read_file(ctx: &AppContext, path: &str) -> Result<String, AppError> {
@@ -30,12 +34,8 @@ pub(super) fn read_file(ctx: &AppContext, path: &str) -> Result<String, AppError
         app_error!(
             Internal,
             "configuration_load_failed",
-            &format!("Failed to read file {}: {}", path, e),
+            &format!("Failed to read file {path}: {e}"),
             ctx.clone()
         )
     })
-}
-
-pub(super) fn file_exists(path: &str) -> bool {
-    fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
 }

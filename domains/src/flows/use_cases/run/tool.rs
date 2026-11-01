@@ -58,7 +58,7 @@ impl Flows {
         };
         let conversation = &mut run.context_mut(step).conversation;
         let output = tools
-            .execute_direct(ctx, conversation, permissions, &call)
+            .call_direct(ctx, conversation, permissions, &call)
             .await?;
 
         conversation.insert_message(

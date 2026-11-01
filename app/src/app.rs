@@ -6,7 +6,7 @@ use tracing::Span;
 
 use app_domains::{
     core::{
-        models::{AppContext, AppError},
+        models::{AppContext, AppError, file::Chroot},
         traits::{ContextFactory, Logging},
     },
     inference::models::Conversation,
@@ -45,13 +45,10 @@ impl App {
         ctx: &AppContext,
         agent_name: &str,
     ) -> Result<Conversation, AppError> {
-        let chroot = ctx
-            .configuration()
-            .get_string(ctx, "context.chroot")
-            .await?;
+        let chroot = Chroot::new(ctx, Arc::clone(&self.domains.file_system), "/", false).await?;
         self.domains
             .inference
-            .new_conversation(ctx, agent_name, &self.domains.tools, &chroot)
+            .new_conversation(ctx, agent_name, &self.domains.tools, chroot)
             .await
     }
 

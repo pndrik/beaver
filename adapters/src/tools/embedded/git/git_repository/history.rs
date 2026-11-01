@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, FixedOffset};
 use git2::{Commit, Delta, Diff, DiffOptions, DiffStatsFormat, Error, Oid, Repository, Sort, Time};
-use std::path::Path;
+use std::{fmt::Write, path::Path};
 
 use super::GitRepository;
 
@@ -12,8 +12,10 @@ fn format_time(time: Time) -> String {
         .and_then(|offset| {
             DateTime::from_timestamp(time.seconds(), 0).map(|date| date.with_timezone(&offset))
         })
-        .map(|date| date.format("%Y-%m-%d %H:%M:%S %z").to_string())
-        .unwrap_or_else(|| time.seconds().to_string())
+        .map_or_else(
+            || time.seconds().to_string(),
+            |date| date.format("%Y-%m-%d %H:%M:%S %z").to_string(),
+        )
 }
 
 fn entry_id(commit: &Commit, file: &str) -> Result<Option<Oid>, Error> {
@@ -147,16 +149,17 @@ impl GitRepository {
         let mut output = format!("commit {}\n", commit.id());
         if commit.parent_count() > 1 {
             let parents: Vec<String> = commit.parent_ids().map(|id| id.to_string()).collect();
-            output.push_str(&format!("Merge: {}\n", parents.join(" ")));
+            let _ = writeln!(output, "Merge: {}", parents.join(" "));
         }
-        output.push_str(&format!(
+        let _ = write!(
+            output,
             "Author: {} <{}>\nDate:   {}\n\n",
             author.name().unwrap_or_default(),
             author.email().unwrap_or_default(),
             format_time(author.when())
-        ));
+        );
         for line in commit.message().unwrap_or_default().trim_end().lines() {
-            output.push_str(&format!("    {}\n", line));
+            let _ = writeln!(output, "    {line}");
         }
 
         let stats = diff.stats()?.to_buf(DiffStatsFormat::FULL, 80)?;

@@ -19,7 +19,7 @@ impl ConfigurationUniversal {
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Failed to get configuration value: {}", e),
+                &format!("Failed to get configuration value: {e}"),
                 ctx.clone()
             )
         })
@@ -32,7 +32,7 @@ impl ConfigurationUniversal {
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Failed to get configuration value: {}", e),
+                &format!("Failed to get configuration value: {e}"),
                 ctx.clone()
             )
         })
@@ -45,7 +45,7 @@ impl ConfigurationUniversal {
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Failed to get configuration value: {}", e),
+                &format!("Failed to get configuration value: {e}"),
                 ctx.clone()
             )
         })

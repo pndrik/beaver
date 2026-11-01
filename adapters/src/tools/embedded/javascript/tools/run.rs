@@ -67,16 +67,19 @@ async fn limits(ctx: &AppContext) -> SandboxLimits {
             .unwrap_or(DEFAULT_LOOP_ITERATION_LIMIT),
         recursion: limit(ctx, CONFIGURATION_RECURSION_LIMIT)
             .await
-            .map_or(DEFAULT_RECURSION_LIMIT, |limit| limit as usize),
+            .map_or(DEFAULT_RECURSION_LIMIT, |limit| {
+                usize::try_from(limit).unwrap_or(usize::MAX)
+            }),
     }
 }
 
 fn format_output(ctx: &AppContext, output: SandboxOutput) -> Result<String, AppError> {
     let console = output.console.trim_end_matches('\n');
     let value = output.result.map_err(|e| {
-        let message = match console.is_empty() {
-            true => format!("Script failed: {}", e),
-            false => format!("Script failed: {}\nConsole output:\n{}", e, console),
+        let message = if console.is_empty() {
+            format!("Script failed: {e}")
+        } else {
+            format!("Script failed: {e}\nConsole output:\n{console}")
         };
         app_error!(Validation, "tool_failed", &message, ctx.clone())
     })?;
@@ -140,7 +143,7 @@ impl Tool for Run {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
@@ -152,7 +155,7 @@ impl Tool for Run {
                 return Err(app_error!(
                     Validation,
                     "tool_failed",
-                    &format!("Path must be absolute: '{}'", path),
+                    &format!("Path must be absolute: '{path}'"),
                     ctx.clone()
                 ));
             }

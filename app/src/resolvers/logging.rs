@@ -23,10 +23,7 @@ pub async fn logging(ctx: &AppContext) -> Result<Arc<dyn Logging + Send + Sync>,
         return Err(app_error!(
             Internal,
             "bootstrap_failed",
-            &format!(
-                "Unsupported logger provider: {}. Only 'stdout' is supported.",
-                provider_name
-            ),
+            &format!("Unsupported logger provider: {provider_name}. Only 'stdout' is supported."),
             ctx.clone()
         ));
     }

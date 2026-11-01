@@ -15,7 +15,7 @@ pub async fn run_conversation(
     agent: &str,
 ) -> Result<(), AppError> {
     let mut conversation = application
-        .new_conversation(&ctx, agent)
+        .new_conversation(ctx, agent)
         .await
         .expect("Failed to create new conversation");
 
@@ -57,7 +57,7 @@ pub async fn run_conversation(
                     .unwrap_or_default();
 
                 if let Some(content) = message.content() {
-                    println!("> [{}]{}: {}", name, usage, content);
+                    println!("> [{name}]{usage}: {content}");
                 }
                 for call in agent_message.iter().flat_map(|m| &m.tool_calls) {
                     println!(
@@ -74,8 +74,8 @@ pub async fn run_conversation(
         }
 
         conversation.insert_message(Message::user(input.to_string(), conversation.agent()), None);
-        match application.infer(&ctx, &mut conversation).await {
-            Ok(_) => {}
+        match application.infer(ctx, &mut conversation).await {
+            Ok(()) => {}
             Err(e) => {
                 println!("Error during inference: {}", e.internal_message);
             }

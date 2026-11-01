@@ -6,7 +6,7 @@ use boa_engine::{Context, JsNativeError, JsResult, JsString, JsValue, NativeFunc
 
 fn btoa(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let input = args
-        .get(0)
+        .first()
         .ok_or_else(|| JsNativeError::typ().with_message("btoa requires one argument"))?;
 
     let input_str = input.to_string(context)?.to_std_string_escaped();
@@ -17,13 +17,13 @@ fn btoa(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<Js
 
 fn atob(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let input = args
-        .get(0)
+        .first()
         .ok_or_else(|| JsNativeError::typ().with_message("atob requires one argument"))?;
 
     let input_str = input.to_string(context)?.to_std_string_escaped();
     let decoded_bytes = BASE64_STANDARD
         .decode(input_str.as_bytes())
-        .map_err(|e| JsNativeError::range().with_message(format!("Invalid base64 input: {}", e)))?;
+        .map_err(|e| JsNativeError::range().with_message(format!("Invalid base64 input: {e}")))?;
 
     Ok(JsString::from(String::from_utf8_lossy(&decoded_bytes).to_string()).into())
 }

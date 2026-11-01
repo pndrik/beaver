@@ -40,13 +40,14 @@ fn get_home_directory() -> String {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_else(|| "".to_string())
+        .unwrap_or_default()
 }
 
 fn get_configuration_file() -> String {
-    std::env::var_os("CONFIGURATION__PATH")
-        .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_else(|| format!("{}/.config/beaver/configuration.yaml", get_home_directory()))
+    std::env::var_os("CONFIGURATION__PATH").map_or_else(
+        || format!("{}/.config/beaver/configuration.yaml", get_home_directory()),
+        |path| path.to_string_lossy().to_string(),
+    )
 }
 
 impl ConfigurationUniversal {
@@ -68,7 +69,7 @@ impl ConfigurationUniversal {
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Failed to build configuration: {}", e),
+                &format!("Failed to build configuration: {e}"),
                 ctx.clone()
             )
         })
@@ -132,7 +133,7 @@ impl Configuration for ConfigurationUniversal {
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Failed to get map for key '{}': {}", key, e),
+                &format!("Failed to get map for key '{key}': {e}"),
                 ctx.clone()
             )
         })?;
@@ -155,7 +156,7 @@ impl Configuration for ConfigurationUniversal {
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Failed to get JSON value for key '{}': {}", key, e),
+                &format!("Failed to get JSON value for key '{key}': {e}"),
                 ctx.clone()
             )
         })?;
@@ -164,7 +165,7 @@ impl Configuration for ConfigurationUniversal {
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Failed to deserialize JSON value for key '{}': {}", key, e),
+                &format!("Failed to deserialize JSON value for key '{key}': {e}"),
                 ctx.clone()
             )
         })

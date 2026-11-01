@@ -1,15 +1,12 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::path::Path;
+use std::collections::HashMap;
+
 use tracing::debug;
 
-use super::{Agent, Message, Usage, chroot};
-use crate::{
-    app_error,
-    core::models::{AppContext, AppError},
-    tools::models::Tool,
-};
+use super::{Agent, ConversationValue, Message, Usage};
+use crate::{core::models::file::Chroot, tools::models::Tool};
 
 type Callback = Box<dyn Fn(Message) + Send + Sync>;
 
@@ -19,32 +16,14 @@ pub struct Conversation {
     agent: Agent,
     tools: Vec<Tool>,
 
-    chroot: String,
+    chroot: Chroot,
     messages: Vec<Message>,
     subscribers: Vec<Callback>,
+    values: HashMap<String, ConversationValue>,
 }
 
 impl Conversation {
-    pub fn new(
-        ctx: &AppContext,
-        system_prompt: Message,
-        agent: Agent,
-        tools: Vec<Tool>,
-        chroot: &str,
-    ) -> Result<Self, AppError> {
-        let chroot = Path::new(chroot.trim_end_matches('/'))
-            .canonicalize()
-            .map_err(|e| {
-                app_error!(
-                    Validation,
-                    "access_violation",
-                    &format!("Invalid chroot '{}': {}", chroot, e),
-                    ctx.clone()
-                )
-            })?
-            .to_string_lossy()
-            .to_string();
-
+    pub fn new(system_prompt: Message, agent: Agent, tools: Vec<Tool>, chroot: Chroot) -> Self {
         let mut conversation = Self {
             system_prompt,
             agent,
@@ -52,13 +31,14 @@ impl Conversation {
             chroot,
             messages: vec![],
             subscribers: vec![],
+            values: HashMap::new(),
         };
 
         for tool in tools {
             conversation.add_tool(tool);
         }
 
-        Ok(conversation)
+        conversation
     }
 
     /*
@@ -94,16 +74,9 @@ impl Conversation {
     /*
      * Chroot
      */
-    pub fn chroot(&self) -> &str {
+    /// The files the conversation's tools work on.
+    pub fn chroot(&self) -> &Chroot {
         &self.chroot
-    }
-
-    pub fn get_absolute_path(&self, ctx: &AppContext, path: &str) -> Result<String, AppError> {
-        chroot::resolve_path(ctx, &self.chroot, path)
-    }
-
-    pub fn get_new_path(&self, ctx: &AppContext, path: &str) -> Result<String, AppError> {
-        chroot::resolve_new_path(ctx, &self.chroot, path)
     }
 
     /*
@@ -118,14 +91,12 @@ impl Conversation {
     }
 
     pub fn insert_message(&mut self, message: Message, position: Option<i64>) {
-        let len = self.messages.len() as i64;
+        let len = self.messages.len();
         let index = match position.unwrap_or(-1) {
-            position if position < 0 => len + 1 + position,
-            position => position,
+            position if position < 0 => usize::try_from(position.unsigned_abs() - 1)
+                .map_or(0, |from_end| len.saturating_sub(from_end)),
+            position => usize::try_from(position).map_or(len, |position| position.min(len)),
         };
-        self.messages
-            .insert(index.clamp(0, len) as usize, message.clone());
-
         debug!(
             channel = "conversation",
             agent = self.agent.metadata.name.as_str(),
@@ -133,9 +104,11 @@ impl Conversation {
             content = message.content().unwrap_or_default(),
         );
 
-        for subscriber in self.subscribers.iter() {
+        for subscriber in &self.subscribers {
             subscriber(message.clone());
         }
+
+        self.messages.insert(index, message);
     }
 
     /// The messages sent to the model: from the latest summary onward, or all.
@@ -188,6 +161,24 @@ impl Conversation {
             || compression
                 .messages
                 .is_some_and(|max_messages| messages >= max_messages)
+    }
+
+    /*
+     * Values
+     */
+    /// The value tools stored under `key`.
+    pub fn value(&self, key: &str) -> Option<&ConversationValue> {
+        self.values.get(key)
+    }
+
+    /// Stores `value` under `key`, replacing an existing one.
+    pub fn set_value(&mut self, key: impl Into<String>, value: ConversationValue) {
+        self.values.insert(key.into(), value);
+    }
+
+    /// Removes the value under `key` and returns it.
+    pub fn remove_value(&mut self, key: &str) -> Option<ConversationValue> {
+        self.values.remove(key)
     }
 
     /*

@@ -20,6 +20,7 @@ impl LogAttributes {
         }
     }
 
+    #[must_use]
     pub fn with(mut self, key: impl Into<String>, value: impl Into<Value>) -> Self {
         let key = key.into();
         if key != TRACE_ID {

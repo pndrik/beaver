@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use crate::{
-    core::models::{AppContext, AppError},
+    core::models::{AppContext, AppError, file::Chroot},
     inference::{
         Inference,
         models::{Conversation, Message},
@@ -18,7 +18,7 @@ impl Inference {
         ctx: &AppContext,
         agent_name: &str,
         tools: &Tools,
-        chroot: &str,
+        chroot: Chroot,
     ) -> Result<Conversation, AppError> {
         let agent = self.agent_provider.get(ctx, agent_name).await?;
 
@@ -28,6 +28,11 @@ impl Inference {
             PROMPT.to_string() + "\n\n---\n# Harness\n" + &agent.prompt,
             &agent,
         );
-        Conversation::new(ctx, system_prompt, agent, tools_permitted, chroot)
+        Ok(Conversation::new(
+            system_prompt,
+            agent,
+            tools_permitted,
+            chroot,
+        ))
     }
 }

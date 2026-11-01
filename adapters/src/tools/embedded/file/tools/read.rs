@@ -3,13 +3,8 @@
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::{
-    fs,
-    io::{BufRead, BufReader},
-    path::Path,
-};
 
-use super::super::permissions;
+use super::super::{permissions, read_state::State};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
@@ -89,80 +84,48 @@ impl Tool for Read {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = permissions::absolute_path(ctx, conversation, &permissions, &args.path)?;
-
-        read_file(ctx, &path, args.start, args.end)
+        let path = permissions::resolve(ctx, conversation, &permissions, &args.path).await?;
+        let chroot = conversation.chroot();
+        let state = State::new(ctx, chroot, &path, conversation).await?;
+        let content = chroot.read_to_string(ctx, path.as_str()).await?;
+        state.mark_read(conversation);
+        Ok(lines(&content, args.start, args.end))
     }
 }
 
-fn read_file(
-    ctx: &AppContext,
-    path: &Path,
-    start: Option<u64>,
-    length: Option<u64>,
-) -> Result<String, AppError> {
-    if !path.is_file() {
-        return Err(app_error!(
-            Validation,
-            "tool_failed",
-            &format!("Path '{}' is not a file", path.display()),
-            ctx.clone()
-        ));
+fn lines(content: &str, start: Option<u64>, end: Option<u64>) -> String {
+    if start.is_none() && end.is_none() {
+        return content.to_string();
     }
 
-    if start.is_none() && length.is_none() {
-        return fs::read_to_string(path).map_err(|e| {
-            app_error!(
-                Internal,
-                "tool_failed",
-                &format!("Failed to read file '{}': {}", path.display(), e),
-                ctx.clone()
-            )
-        });
+    let start = start.unwrap_or(1).max(1);
+    let end = end.unwrap_or(u64::MAX);
+    content
+        .lines()
+        .skip(usize::try_from(start - 1).unwrap_or(usize::MAX))
+        .take(usize::try_from(end.saturating_sub(start - 1)).unwrap_or(usize::MAX))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lines;
+
+    const FILE: &str = "one\ntwo\nthree\n";
+
+    #[test]
+    fn reads_line_ranges() {
+        assert_eq!(lines(FILE, None, None), FILE);
+        assert_eq!(lines(FILE, Some(2), None), "two\nthree");
+        assert_eq!(lines(FILE, Some(2), Some(2)), "two");
+        assert_eq!(lines(FILE, None, Some(2)), "one\ntwo");
+        assert_eq!(lines(FILE, Some(3), Some(1)), "");
+        assert_eq!(lines(FILE, Some(9), None), "");
     }
-
-    let file = fs::File::open(path).map_err(|e| {
-        app_error!(
-            Internal,
-            "tool_failed",
-            &format!("Failed to open file '{}': {}", path.display(), e),
-            ctx.clone()
-        )
-    })?;
-
-    let mut out = String::new();
-    let mut line_no = 1u64;
-    let start = start.unwrap_or(1);
-    let end = length.map(|l| start + l - 1);
-
-    for line in BufReader::new(file).lines() {
-        let line = line.map_err(|e| {
-            app_error!(
-                Internal,
-                "tool_failed",
-                &format!("Failed to read file '{}': {}", path.display(), e),
-                ctx.clone()
-            )
-        })?;
-
-        if line_no >= start {
-            if let Some(e) = end {
-                if line_no > e {
-                    break;
-                }
-            }
-            out.push_str(&line);
-            out.push('\n');
-        }
-
-        line_no += 1;
-    }
-    _ = out.pop();
-
-    Ok(out)
 }

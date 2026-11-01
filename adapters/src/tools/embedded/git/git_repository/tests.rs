@@ -21,7 +21,7 @@ fn repository() -> (TempDir, GitRepository) {
         password: None,
         known_hosts: vec![],
     };
-    let git = GitRepository::new(config, &dir.path().to_string_lossy());
+    let git = GitRepository::new(config, dir.path());
     (dir, git)
 }
 
@@ -178,7 +178,7 @@ fn log_lists_the_changed_files_of_each_commit() {
 fn log_shortens_long_file_lists() {
     let (dir, git) = repository();
     for i in 0..25 {
-        fs::write(dir.path().join(format!("{:02}.txt", i)), "x").unwrap();
+        fs::write(dir.path().join(format!("{i:02}.txt")), "x").unwrap();
     }
     git.commit("many").unwrap();
 
@@ -208,10 +208,9 @@ fn log_filters_by_file_or_directory() {
         subjects(&git.log("HEAD", Some("docs"), 0, 20).unwrap()),
         ["add b"]
     );
-    assert!(
-        git.log("HEAD", Some("missing.txt"), 0, 20)
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        git.log("HEAD", Some("missing.txt"), 0, 20).unwrap(),
+        [] as [std::string::String; 0]
     );
 }
 
@@ -252,4 +251,63 @@ fn unknown_revisions_fail() {
     let (_dir, git) = history();
     assert!(git.log("missing", None, 0, 20).is_err());
     assert!(git.show("missing", None).is_err());
+}
+
+/// A repository at `source` whose only commit has the symlink `link` to `/etc/passwd`.
+fn repository_with_symlink(source: &std::path::Path) {
+    let repo = Git2Repository::init(source).unwrap();
+    std::os::unix::fs::symlink("/etc/passwd", source.join("link")).unwrap();
+    let mut index = repo.index().unwrap();
+    index.add_path(std::path::Path::new("link")).unwrap();
+    index.write().unwrap();
+    let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+    let signature = git2::Signature::now("Beaver", "beaver@example.com").unwrap();
+    repo.commit(Some("HEAD"), &signature, &signature, "link", &tree, &[])
+        .unwrap();
+}
+
+#[test]
+fn clones_check_out_symlinks_as_files() {
+    let source = tempfile::tempdir().unwrap();
+    repository_with_symlink(source.path());
+    let target = tempfile::tempdir().unwrap();
+    let path = target.path().join("clone");
+    let config = Repository {
+        url: source.path().to_string_lossy().to_string(),
+        email: "beaver@example.com".to_string(),
+        display_name: None,
+        username: None,
+        ssh_key: None,
+        password: None,
+        known_hosts: vec![],
+    };
+
+    GitRepository::new(config, &path).clone().unwrap();
+
+    let link = fs::symlink_metadata(path.join("link")).unwrap();
+    assert!(link.is_file());
+    assert_eq!(
+        fs::read_to_string(path.join("link")).unwrap(),
+        "/etc/passwd"
+    );
+}
+
+#[test]
+fn checkouts_write_symlinks_as_files() {
+    let (dir, git) = repository();
+    fs::write(dir.path().join("a.txt"), "one").unwrap();
+    git.commit("add a").unwrap();
+    git.checkout("with-link").unwrap();
+    std::os::unix::fs::symlink("/etc/passwd", dir.path().join("link")).unwrap();
+    git.commit("add link").unwrap();
+    fs::remove_file(dir.path().join("link")).unwrap();
+
+    let head = Git2Repository::open(dir.path()).unwrap();
+    head.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+        .unwrap();
+    assert!(
+        fs::symlink_metadata(dir.path().join("link"))
+            .unwrap()
+            .is_file()
+    );
 }

@@ -20,12 +20,14 @@ fn context() -> AppContext {
 }
 
 fn parse(schema: Value) -> Result<Schema, AppError> {
-    Schema::from_json_input_schema(&context(), schema.as_object().unwrap().clone())
+    Schema::from_json_input_schema(&context(), serde_json::from_value(schema).unwrap())
 }
 
 /// A schema with a single optional property `x`.
 fn schema_with(property: Value) -> Schema {
-    parse(json!({ "type": "object", "properties": { "x": property } })).unwrap()
+    let mut schema = json!({ "type": "object", "properties": {} });
+    schema["properties"]["x"] = property;
+    parse(schema).unwrap()
 }
 
 fn call(arguments: Value) -> Call {
@@ -34,7 +36,9 @@ fn call(arguments: Value) -> Call {
 }
 
 fn accepts(property: Value, value: Value) -> bool {
-    call(json!({ "x": value })).validate_arguments(schema_with(property))
+    let mut arguments = json!({});
+    arguments["x"] = value;
+    call(arguments).validate_arguments(schema_with(property))
 }
 
 #[test]

@@ -67,7 +67,7 @@ pub(crate) async fn context_middleware(
             client_ip = %client.ip(),
             user_agent,
             response_size,
-        )
+        );
     });
 
     response

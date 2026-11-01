@@ -51,7 +51,7 @@ impl ToolsProvider for EchoProvider {
             _ => Err(app_error!(
                 NotFound,
                 "tool_not_found",
-                &format!("Tool '{}' not found.", name),
+                &format!("Tool '{name}' not found."),
                 ctx.clone()
             )),
         }
@@ -75,8 +75,8 @@ impl ToolsProvider for EchoProvider {
 
         let text = input
             .get_argument("text")
-            .and_then(|value| value.as_string())
+            .and_then(app_domains::tools::models::CallValue::as_string)
             .unwrap_or_default();
-        Ok(format!("echo {} @ {}", text, conversation.chroot()))
+        Ok(format!("echo {} @ {}", text, conversation.chroot().root()))
     }
 }

@@ -76,6 +76,6 @@ impl Visit for Fields {
     }
 
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        self.push(field, Value::from(format!("{:?}", value)));
+        self.push(field, Value::from(format!("{value:?}")));
     }
 }

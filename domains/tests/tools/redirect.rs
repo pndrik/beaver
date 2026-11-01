@@ -7,14 +7,15 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 
 use app_adapters::{
-    agent,
-    configuration::ConfigurationMap,
-    inference::Scripted,
-    tools::{output_writer, provider::EchoProvider},
+    agent, configuration::ConfigurationMap, file_system, inference::Scripted,
+    tools::provider::EchoProvider,
 };
 use app_domains::{
     app_error,
-    core::models::{AppContext, AppError},
+    core::models::{
+        AppContext, AppError,
+        file::{self, Chroot},
+    },
     inference::{
         Inference,
         models::{
@@ -29,7 +30,7 @@ use app_domains::{
 };
 
 /// `arguments` returns the arguments it received, `own` does too but defines
-/// `redirect_to_file` itself.
+/// `harness_redirect_to_file` itself.
 struct ArgumentsProvider;
 
 impl ArgumentsProvider {
@@ -42,7 +43,7 @@ impl ArgumentsProvider {
         );
         if name == "own" {
             schema.add_property(
-                "redirect_to_file",
+                "harness_redirect_to_file",
                 false,
                 SchemaField::new(SchemaFieldType::String, "Its own argument.", None),
             );
@@ -82,7 +83,7 @@ impl ToolsProvider for ArgumentsProvider {
     ) -> Result<String, AppError> {
         let mut keys: Vec<&String> = input.arguments.keys().collect();
         keys.sort();
-        Ok(format!("keys: {:?}", keys))
+        Ok(format!("keys: {keys:?}"))
     }
 }
 
@@ -90,18 +91,31 @@ struct Fixture {
     ctx: AppContext,
     inference: Inference,
     tools: Tools,
-    writer: Arc<output_writer::Memory>,
     conversation: Conversation,
-    chroot: tempfile::TempDir,
+    /// The whole file system, the agent works in `/agent`.
+    root: Chroot,
 }
 
+/// The agent's chroot is `/agent` with the directory `out`, next to
+/// `/secret/file.txt`.
 async fn fixture(redirect_output: bool) -> Fixture {
-    let chroot = tempfile::tempdir().unwrap();
-    std::fs::create_dir(chroot.path().join("out")).unwrap();
     let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
     )));
+    let memory = Arc::new(file_system::Memory::new());
+    let root = Chroot::new(&ctx, memory.clone(), "/", false).await.unwrap();
+    root.mkdir(&ctx, "/agent/out", true).await.unwrap();
+    root.mkdir(&ctx, "/secret", false).await.unwrap();
+    root.write(
+        &ctx,
+        "/secret/file.txt",
+        b"secret",
+        file::WriteMode::Truncate,
+    )
+    .await
+    .unwrap();
+    let chroot = Chroot::new(&ctx, memory, "/agent", false).await.unwrap();
 
     let mut agent = Agent::new(
         "agent".to_string(),
@@ -126,17 +140,13 @@ async fn fixture(redirect_output: bool) -> Fixture {
         vec![Arc::new(Scripted::new())],
     )
     .unwrap();
-    let writer = Arc::new(output_writer::Memory::new());
-    let tools = Tools::new(
-        vec![
-            Arc::new(EchoProvider::new(&ctx)),
-            Arc::new(ArgumentsProvider),
-        ],
-        writer.clone(),
-    )
+    let tools = Tools::new(vec![
+        Arc::new(EchoProvider::new(&ctx)),
+        Arc::new(ArgumentsProvider),
+    ])
     .unwrap();
     let conversation = inference
-        .new_conversation(&ctx, "agent", &tools, &chroot.path().to_string_lossy())
+        .new_conversation(&ctx, "agent", &tools, chroot)
         .await
         .unwrap();
 
@@ -144,9 +154,8 @@ async fn fixture(redirect_output: bool) -> Fixture {
         ctx,
         inference,
         tools,
-        writer,
         conversation,
-        chroot,
+        root,
     }
 }
 
@@ -173,14 +182,27 @@ impl Fixture {
             .to_string()
     }
 
-    fn host_path(&self, path: &str) -> String {
-        self.chroot
-            .path()
-            .canonicalize()
-            .unwrap()
-            .join(path.trim_start_matches('/'))
-            .to_string_lossy()
-            .to_string()
+    /// The files in the agent's chroot with their content.
+    async fn files(&self) -> Vec<(String, String)> {
+        let chroot = self.conversation.chroot();
+        let files = chroot
+            .find(
+                &self.ctx,
+                "/",
+                None,
+                &[file::Kind::File],
+                0..=usize::MAX,
+                &[],
+                None,
+            )
+            .await
+            .unwrap();
+        let mut contents = vec![];
+        for entry in files {
+            let content = chroot.read_to_string(&self.ctx, entry.path.as_str()).await;
+            contents.push((entry.path.to_string(), content.unwrap()));
+        }
+        contents
     }
 }
 
@@ -192,7 +214,7 @@ fn offers_redirect(conversation: &Conversation, name: &str) -> bool {
         .unwrap()
         .schema
         .properties
-        .contains_key("redirect_to_file")
+        .contains_key("harness_redirect_to_file")
 }
 
 #[tokio::test]
@@ -206,9 +228,15 @@ async fn schema_offers_redirect_only_when_enabled() {
         .iter()
         .find(|tool| tool.name == "own")
         .unwrap();
+    let echo = enabled
+        .conversation
+        .tools()
+        .iter()
+        .find(|tool| tool.name == "echo")
+        .unwrap();
     assert_eq!(
-        own.schema.properties["redirect_to_file"].description,
-        "Its own argument."
+        own.schema.properties["harness_redirect_to_file"].description,
+        echo.schema.properties["harness_redirect_to_file"].description
     );
 
     let disabled = fixture(false).await;
@@ -221,13 +249,16 @@ async fn redirect_fails_when_disabled() {
     let message = fixture
         .call(call(
             "echo",
-            &[("text", "hi"), ("redirect_to_file", "/out/a.txt")],
+            &[("text", "hi"), ("harness_redirect_to_file", "/out/a.txt")],
         ))
         .await;
 
     assert!(message.contains("Error"));
     assert!(message.contains("Output redirection is not enabled for this agent"));
-    assert!(fixture.writer.writes().is_empty());
+    assert_eq!(
+        fixture.files().await,
+        [] as [(std::string::String, std::string::String); 0]
+    );
 }
 
 #[tokio::test]
@@ -236,22 +267,23 @@ async fn output_is_written_and_only_a_receipt_is_returned() {
     let message = fixture
         .call(call(
             "echo",
-            &[("text", "hi"), ("redirect_to_file", "/out/a.txt")],
+            &[("text", "hi"), ("harness_redirect_to_file", "/out/a.txt")],
         ))
         .await;
 
-    let output = format!("echo hi @ {}", fixture.conversation.chroot());
+    let output = "echo hi @ /agent".to_string();
     assert_eq!(
-        fixture.writer.writes(),
-        vec![(fixture.host_path("/out/a.txt"), output.clone())]
+        fixture.files().await,
+        vec![("/out/a.txt".to_string(), output.clone())]
     );
     assert!(message.starts_with("Name: echo\nArguments: "));
-    assert!(message.contains(r#""redirect_to_file":"/out/a.txt""#));
+    assert!(message.contains(r#""harness_redirect_to_file":"/out/a.txt""#));
     assert!(message.contains(r#""text":"hi""#));
     assert!(message.ends_with(&format!(
-        "Result: \nOutput written to '/out/a.txt' ({} bytes, 1 lines)",
+        "}}\nOutput written to '/out/a.txt' ({} bytes, 1 lines)",
         output.len()
     )));
+    assert!(!message.contains("Result:"));
     assert!(!message.contains(&output));
 }
 
@@ -259,12 +291,15 @@ async fn output_is_written_and_only_a_receipt_is_returned() {
 async fn nothing_is_written_when_the_tool_fails() {
     let mut fixture = fixture(true).await;
     let message = fixture
-        .call(call("fail", &[("redirect_to_file", "/out/a.txt")]))
+        .call(call("fail", &[("harness_redirect_to_file", "/out/a.txt")]))
         .await;
 
     assert!(message.contains("Error"));
     assert!(message.contains("failed on purpose"));
-    assert!(fixture.writer.writes().is_empty());
+    assert_eq!(
+        fixture.files().await,
+        [] as [(std::string::String, std::string::String); 0]
+    );
 }
 
 #[tokio::test]
@@ -279,32 +314,43 @@ async fn paths_outside_the_chroot_are_rejected() {
         "/",
     ] {
         let message = fixture
-            .call(call("echo", &[("redirect_to_file", path)]))
+            .call(call("echo", &[("harness_redirect_to_file", path)]))
             .await;
-        assert!(message.contains("Error: "), "{}: {}", path, message);
+        assert!(message.contains("Error: "), "{path}: {message}");
     }
 
-    let outside = tempfile::tempdir().unwrap();
-    std::os::unix::fs::symlink(outside.path(), fixture.chroot.path().join("escape")).unwrap();
-    std::os::unix::fs::symlink(
-        outside.path().join("file.txt"),
-        fixture.chroot.path().join("out/link.txt"),
-    )
-    .unwrap();
-    std::fs::write(outside.path().join("file.txt"), "").unwrap();
+    let ctx = &fixture.ctx;
+    fixture
+        .root
+        .symlink(ctx, "/secret", "/agent/escape")
+        .await
+        .unwrap();
+    fixture
+        .root
+        .symlink(ctx, "/secret/file.txt", "/agent/out/link.txt")
+        .await
+        .unwrap();
     for path in ["/escape/a.txt", "/out/link.txt"] {
         let message = fixture
-            .call(call("echo", &[("redirect_to_file", path)]))
+            .call(call("echo", &[("harness_redirect_to_file", path)]))
             .await;
-        assert!(
-            message.contains("outside of chroot"),
-            "{}: {}",
-            path,
-            message
-        );
+        assert!(message.contains("is not accessible"), "{path}: {message}");
     }
 
-    assert!(fixture.writer.writes().is_empty());
+    assert_eq!(
+        fixture.files().await,
+        [] as [(std::string::String, std::string::String); 0]
+    );
+    let secret = fixture
+        .root
+        .read_to_string(&fixture.ctx, "/secret/file.txt");
+    assert_eq!(secret.await.unwrap(), "secret");
+    let entries = fixture
+        .root
+        .read_dir(&fixture.ctx, "/secret")
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 1);
 }
 
 #[tokio::test]
@@ -313,25 +359,31 @@ async fn the_argument_is_stripped_before_the_provider_sees_it() {
     fixture
         .call(call(
             "arguments",
-            &[("text", "hi"), ("redirect_to_file", "/out/a.txt")],
+            &[("text", "hi"), ("harness_redirect_to_file", "/out/a.txt")],
         ))
         .await;
-    assert_eq!(fixture.writer.writes()[0].1, r#"keys: ["text"]"#);
+    assert_eq!(fixture.files().await[0].1, r#"keys: ["text"]"#);
 }
 
 #[tokio::test]
-async fn tools_defining_the_argument_are_left_alone() {
+async fn tools_defining_the_argument_are_overridden() {
     let mut fixture = fixture(true).await;
     let message = fixture
-        .call(call("own", &[("redirect_to_file", "/out/a.txt")]))
+        .call(call(
+            "own",
+            &[("text", "hi"), ("harness_redirect_to_file", "/out/a.txt")],
+        ))
         .await;
 
     assert!(
-        message.ends_with(r#"keys: ["redirect_to_file"]"#),
+        message.contains("Output written to '/out/a.txt'"),
         "{}",
         message
     );
-    assert!(fixture.writer.writes().is_empty());
+    assert_eq!(
+        fixture.files().await,
+        vec![("/out/a.txt".to_string(), r#"keys: ["text"]"#.to_string())]
+    );
 }
 
 #[tokio::test]
@@ -339,17 +391,23 @@ async fn flow_tool_steps_do_not_redirect() {
     let mut fixture = fixture(true).await;
     let result = fixture
         .tools
-        .execute_direct(
+        .call_direct(
             &fixture.ctx,
             &mut fixture.conversation,
             ToolPermission {
                 name: "echo".to_string(),
                 scopes: vec![],
             },
-            &call("echo", &[("redirect_to_file", "/out/a.txt")]),
+            &call(
+                "echo",
+                &[("text", "hi"), ("harness_redirect_to_file", "/out/a.txt")],
+            ),
         )
         .await;
 
-    assert!(result.is_err());
-    assert!(fixture.writer.writes().is_empty());
+    assert_eq!(result.unwrap(), "echo hi @ /agent");
+    assert_eq!(
+        fixture.files().await,
+        [] as [(std::string::String, std::string::String); 0]
+    );
 }

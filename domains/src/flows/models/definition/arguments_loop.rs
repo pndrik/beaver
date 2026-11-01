@@ -44,7 +44,7 @@ impl ArgumentsLoop {
         if !(1..=LOOP_MAX_LIMIT).contains(&self.max) {
             return Err(invalid(
                 ctx,
-                &format!("arguments.max must be between 1 and {}", LOOP_MAX_LIMIT),
+                &format!("arguments.max must be between 1 and {LOOP_MAX_LIMIT}"),
             ));
         }
         if self.steps.is_empty() {

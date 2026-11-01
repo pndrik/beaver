@@ -44,7 +44,7 @@ impl Argument {
         if let (Some(pattern), Value::String(text)) = (&self.regex, &parsed)
             && !regex(ctx, pattern)?.is_match(text)
         {
-            return Err(rejected(format!("{} does not match '{}'", value, pattern)));
+            return Err(rejected(format!("{value} does not match '{pattern}'")));
         }
         Ok(parsed)
     }

@@ -73,23 +73,15 @@ impl Tool for Clone {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = permissions::clone_target_path(ctx, conversation, &permissions, &args.path)?;
-        let path_str = path.to_str().ok_or_else(|| {
-            app_error!(
-                Validation,
-                "tool_failed",
-                &format!("Path '{}' is not valid UTF-8", args.path),
-                ctx.clone()
-            )
-        })?;
-
+        let (local, name) =
+            permissions::clone_target(ctx, conversation, &permissions, &args.path).await?;
         let repository = configuration::get_repository_by_url(ctx, &args.url).await?;
-        let git_repository = GitRepository::new(repository, path_str);
+        let git_repository = GitRepository::new(repository, &local.path().join(name));
 
         git_repository.clone().map_err(|e| {
             app_error!(
@@ -99,6 +91,7 @@ impl Tool for Clone {
                 ctx.clone()
             )
         })?;
+        local.sync(ctx).await?;
 
         Ok(format!(
             "Cloned repository '{}' into '{}'",

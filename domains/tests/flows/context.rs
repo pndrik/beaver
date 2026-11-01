@@ -38,13 +38,12 @@ spec:
 fn assert_traced_by_log_attributes(logger: &Memory) {
     let events = logger.events();
     let expected = json!({ "trace_id": TENANT_TRACE_ID, "tenant": "acme" });
-    assert!(!events.is_empty());
+    assert_ne!(events, [] as [app_adapters::logging::RecordedEvent; 0]);
     assert!(
         events
             .iter()
             .all(|event| event.ctx.clone().map(Value::Object) == Some(expected.clone())),
-        "{:?}",
-        events
+        "{events:?}"
     );
 }
 

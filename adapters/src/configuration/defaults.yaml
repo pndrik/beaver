@@ -1,5 +1,7 @@
-context:
-  chroot: "/tmp"
+file_system:
+  provider: "disk"
+  disk:
+    root: "/tmp"
 logger:
   level: "info"
   provider: "stdout"

@@ -14,11 +14,11 @@ pub(super) fn list_directories(ctx: &AppContext, path: &str) -> Result<Vec<Strin
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Failed to list directory: {}", path),
+                &format!("Failed to list directory: {path}"),
                 ctx.clone()
             )
         })?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.path())
         .filter(|p| p.is_dir())
         .map(|p| p.display().to_string())
@@ -30,7 +30,7 @@ pub(super) fn read_file(ctx: &AppContext, path: &str) -> Result<String, AppError
         app_error!(
             Internal,
             "configuration_load_failed",
-            &format!("Failed to read file {}: {}", path, e),
+            &format!("Failed to read file {path}: {e}"),
             ctx.clone()
         )
     })

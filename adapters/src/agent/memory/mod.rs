@@ -39,7 +39,7 @@ impl AgentProvider for Memory {
                 app_error!(
                     NotFound,
                     "agent_not_found",
-                    &format!("Agent '{}' not found.", name),
+                    &format!("Agent '{name}' not found."),
                     ctx.clone()
                 )
             })

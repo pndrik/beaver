@@ -21,7 +21,7 @@ async fn add_provider_if_enabled(
         .configuration()
         .get_bool(
             ctx,
-            format!("{}.{}.enabled", CONFIGURATION_PROVIDERS, provider_name).as_str(),
+            format!("{CONFIGURATION_PROVIDERS}.{provider_name}.enabled").as_str(),
         )
         .await
         .unwrap_or(false)

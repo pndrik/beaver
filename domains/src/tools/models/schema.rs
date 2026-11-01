@@ -168,18 +168,13 @@ impl SchemaField {
                 ctx.clone()
             ));
         }
-        if self.properties.is_none() {
-            self.properties = Some(BTreeMap::new());
-        }
         if required {
-            if self.required.is_none() {
-                self.required = Some(Vec::new());
-            }
-            self.required.as_mut().unwrap().push(name.to_string());
+            self.required
+                .get_or_insert_with(Vec::new)
+                .push(name.to_string());
         }
         self.properties
-            .as_mut()
-            .unwrap()
+            .get_or_insert_with(BTreeMap::new)
             .insert(name.to_string(), field);
         Ok(())
     }
@@ -210,7 +205,7 @@ impl Schema {
         }
     }
 
-    pub fn add_property(&mut self, name: &str, required: bool, field: SchemaField) -> () {
+    pub fn add_property(&mut self, name: &str, required: bool, field: SchemaField) {
         if required {
             self.required.push(name.to_string());
         }

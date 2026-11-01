@@ -2,14 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde_json::{Map, Value, json};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use tracing::{trace, warn};
 
 use super::{Action, Definition, RunContext, Step};
 use crate::{
     app_error,
     core::{
-        models::{AppContext, AppError},
+        models::{AppContext, AppError, file},
         traits::TemplateEngine,
     },
 };
@@ -22,7 +22,7 @@ pub(crate) struct FlowRun {
     pub(crate) arguments: Map<String, Value>,
     pub(crate) variables: Map<String, Value>,
     pub(crate) flows: Map<String, Value>,
-    pub(crate) delete_on_finish: Vec<PathBuf>,
+    pub(crate) delete_on_finish: Vec<file::Path>,
     pub(crate) depth: u32,
 }
 
@@ -65,7 +65,7 @@ impl FlowRun {
             .insert(step.name.clone(), Value::Object(child.variables));
     }
 
-    pub(crate) fn delete_when_finished(&mut self, chroot: PathBuf) {
+    pub(crate) fn delete_when_finished(&mut self, chroot: file::Path) {
         if !self.delete_on_finish.contains(&chroot) {
             self.delete_on_finish.push(chroot);
         }

@@ -195,5 +195,5 @@ async fn example_flows_are_valid() {
 
     let flows = File::new(&ctx).list(&ctx).await.unwrap();
     assert!(flows.iter().any(|f| f.metadata.name == "double_check"));
-    assert!(logger.messages(Level::WARN).is_empty());
+    assert_eq!(logger.messages(Level::WARN), [] as [std::string::String; 0]);
 }

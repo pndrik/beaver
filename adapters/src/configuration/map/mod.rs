@@ -30,7 +30,7 @@ impl ConfigurationMap {
             app_error!(
                 Internal,
                 "configuration_load_failed",
-                &format!("Configuration key '{}' not found", key),
+                &format!("Configuration key '{key}' not found"),
                 ctx.clone()
             )
         })
@@ -40,7 +40,7 @@ impl ConfigurationMap {
         app_error!(
             Internal,
             "configuration_load_failed",
-            &format!("Configuration key '{}' is not a {}", key, expected),
+            &format!("Configuration key '{key}' is not a {expected}"),
             ctx.clone()
         )
     }
@@ -61,7 +61,7 @@ impl Configuration for ConfigurationMap {
     async fn get_string(&self, ctx: &AppContext, key: &str) -> Result<String, AppError> {
         self.get(ctx, key)?
             .as_str()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .ok_or_else(|| Self::invalid_type(ctx, key, "string"))
     }
 

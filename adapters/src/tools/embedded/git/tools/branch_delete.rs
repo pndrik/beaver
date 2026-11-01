@@ -97,7 +97,7 @@ impl Tool for BranchDelete {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
@@ -107,22 +107,13 @@ impl Tool for BranchDelete {
                 Validation,
                 "tool_failed",
                 &format!(
-                    "The 'url' argument is required when 'delete_remote' is true for tool '{}'",
-                    NAME
+                    "The 'url' argument is required when 'delete_remote' is true for tool '{NAME}'"
                 ),
                 ctx.clone()
             ));
         }
 
-        let path = permissions::existing_repo_path(ctx, conversation, &permissions, &args.path)?;
-        let path_str = path.to_str().ok_or_else(|| {
-            app_error!(
-                Validation,
-                "tool_failed",
-                &format!("Path '{}' is not valid UTF-8", args.path),
-                ctx.clone()
-            )
-        })?;
+        let local = permissions::repository(ctx, conversation, &permissions, &args.path).await?;
 
         let repository = if args.delete_remote {
             configuration::get_repository_by_url(ctx, args.url.as_deref().unwrap()).await?
@@ -138,8 +129,7 @@ impl Tool for BranchDelete {
             }
         };
 
-        let git_repository = GitRepository::new(repository, path_str);
-
+        let git_repository = GitRepository::new(repository, local.path());
         if git_repository
             .is_current_branch(&args.branch)
             .unwrap_or(false)
@@ -182,6 +172,8 @@ impl Tool for BranchDelete {
                     )
                 })?;
         }
+
+        local.sync(ctx).await?;
 
         Ok(format!(
             "Deleted branch '{}' in repository '{}'{}",

@@ -14,7 +14,7 @@ pub(super) fn parse_flow(ctx: &AppContext, file_content: &str) -> Result<Definit
         app_error!(
             Validation,
             "flow_invalid",
-            &format!("Failed to parse flow file: {}", e),
+            &format!("Failed to parse flow file: {e}"),
             ctx.clone()
         )
     })

@@ -12,17 +12,58 @@ use std::{
     path::{Component, Path, PathBuf},
     rc::Rc,
 };
+use tokio::runtime::Handle;
 
 use app_domains::{
     app_error,
-    core::models::{AppContext, AppError},
-    inference::models::chroot,
+    core::models::{
+        AppContext, AppError,
+        file::{self, Chroot},
+    },
 };
+
+pub(super) enum Modules {
+    Chroot { chroot: Chroot, handle: Handle },
+    Directory(PathBuf),
+}
+
+impl Modules {
+    pub fn directory(ctx: &AppContext, directory: &str) -> Result<Self, AppError> {
+        std::fs::canonicalize(directory)
+            .map(Self::Directory)
+            .map_err(|e| {
+                app_error!(
+                    Validation,
+                    "access_violation",
+                    &format!("Invalid module directory '{directory}': {e}"),
+                    ctx.clone()
+                )
+            })
+    }
+
+    fn read(&self, ctx: &AppContext, path: &file::Path) -> Result<Vec<u8>, String> {
+        match self {
+            Self::Chroot { chroot, handle } => handle
+                .block_on(chroot.read(ctx, path.as_str(), None))
+                .map_err(|e| e.internal_message),
+            Self::Directory(root) => {
+                let host = root
+                    .join(path.as_str().trim_start_matches('/'))
+                    .canonicalize()
+                    .map_err(|e| e.to_string())?;
+                if !host.starts_with(root) {
+                    return Err("outside of the module directory".to_string());
+                }
+                std::fs::read(host).map_err(|e| e.to_string())
+            }
+        }
+    }
+}
 
 pub(super) struct ChrootModuleLoader {
     ctx: AppContext,
-    root: PathBuf,
-    modules: GcRefCell<HashMap<PathBuf, Module>>,
+    modules: Modules,
+    loaded: GcRefCell<HashMap<file::Path, Module>>,
 }
 
 fn error(message: String) -> JsError {
@@ -30,45 +71,35 @@ fn error(message: String) -> JsError {
 }
 
 impl ChrootModuleLoader {
-    pub fn new(ctx: &AppContext, root: &str) -> Result<Self, AppError> {
-        let root = Path::new(root).canonicalize().map_err(|e| {
-            app_error!(
-                Validation,
-                "access_violation",
-                &format!("Invalid chroot '{}': {}", root, e),
-                ctx.clone()
-            )
-        })?;
-
-        Ok(Self {
+    pub fn new(ctx: &AppContext, modules: Modules) -> Self {
+        Self {
             ctx: ctx.clone(),
-            root,
-            modules: GcRefCell::default(),
-        })
+            modules,
+            loaded: GcRefCell::default(),
+        }
     }
 
-    pub(super) fn resolve(&self, specifier: &str, referrer: Option<&Path>) -> JsResult<String> {
+    /// The absolute path `specifier` refers to from the module at `referrer`.
+    pub(super) fn resolve(specifier: &str, referrer: Option<&Path>) -> JsResult<String> {
         let path = if specifier.starts_with('/') {
             PathBuf::from(specifier)
         } else if specifier.starts_with("./") || specifier.starts_with("../") {
             let directory = match referrer {
-                Some(referrer) => Path::new("/")
-                    .join(referrer.strip_prefix(&self.root).map_err(|_| {
-                        error(format!(
-                            "Module '{}' is outside of chroot",
-                            referrer.display()
-                        ))
-                    })?)
+                Some(referrer) if referrer.has_root() => referrer
                     .parent()
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| PathBuf::from("/")),
+                    .map_or_else(|| PathBuf::from("/"), Path::to_path_buf),
+                Some(referrer) => {
+                    return Err(error(format!(
+                        "Module '{}' is outside of chroot",
+                        referrer.display()
+                    )));
+                }
                 None => PathBuf::from("/"),
             };
             directory.join(specifier)
         } else {
             return Err(error(format!(
-                "Cannot import '{}', only paths inside the chroot can be imported",
-                specifier
+                "Cannot import '{specifier}', only paths inside the chroot can be imported"
             )));
         };
 
@@ -77,7 +108,7 @@ impl ChrootModuleLoader {
             match component {
                 Component::Normal(part) => normalized.push(part),
                 Component::ParentDir if !normalized.pop() => {
-                    return Err(error(format!("Import '{}' escapes the chroot", specifier)));
+                    return Err(error(format!("Import '{specifier}' escapes the chroot")));
                 }
                 _ => {}
             }
@@ -87,23 +118,16 @@ impl ChrootModuleLoader {
     }
 
     pub(super) fn load(&self, path: &str, context: &mut Context) -> JsResult<Module> {
-        let root = self.root.to_string_lossy();
-        let host = PathBuf::from(
-            chroot::resolve_path(&self.ctx, &root, path)
-                .map_err(|e| error(format!("Cannot import '{}': {}", path, e.internal_message)))?,
-        );
-        if !host.is_file() {
-            return Err(error(format!("Cannot import '{}': not a file", path)));
-        }
-
-        if let Some(module) = self.modules.borrow().get(&host) {
+        let cannot = |message: String| error(format!("Cannot import '{path}': {message}"));
+        let path = file::Path::parse(&self.ctx, path).map_err(|e| cannot(e.internal_message))?;
+        if let Some(module) = self.loaded.borrow().get(&path) {
             return Ok(module.clone());
         }
 
-        let source = Source::from_filepath(&host)
-            .map_err(|e| error(format!("Cannot read module '{}': {}", path, e)))?;
+        let content = self.modules.read(&self.ctx, &path).map_err(cannot)?;
+        let source = Source::from_bytes(&content).with_path(Path::new(path.as_str()));
         let module = Module::parse(source, None, context)?;
-        self.modules.borrow_mut().insert(host, module.clone());
+        self.loaded.borrow_mut().insert(path, module.clone());
         Ok(module)
     }
 }
@@ -115,12 +139,11 @@ impl ModuleLoader for ChrootModuleLoader {
         request: ModuleRequest,
         context: &RefCell<&mut Context>,
     ) -> impl Future<Output = JsResult<Module>> {
-        let result = self
-            .resolve(
-                &request.specifier().to_std_string_escaped(),
-                referrer.path(),
-            )
-            .and_then(|path| self.load(&path, &mut context.borrow_mut()));
+        let result = ChrootModuleLoader::resolve(
+            &request.specifier().to_std_string_escaped(),
+            referrer.path(),
+        )
+        .and_then(|path| self.load(&path, &mut context.borrow_mut()));
 
         async { result }
     }

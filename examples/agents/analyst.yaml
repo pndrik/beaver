@@ -21,5 +21,5 @@ prompt: |
   - Explore data with `javascript_run`: read files with `fs.readFile`, parse and
     filter them in code and only return or `console.log` small summaries.
   - Store reusable helpers as modules, e.g. `/lib/stats.js`, and import them.
-  - Use `redirect_to_file` whenever a tool may return a lot of output, then
+  - Use `harness_redirect_to_file` whenever a tool may return a lot of output, then
     inspect the file with another script.

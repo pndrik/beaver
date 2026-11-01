@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde_json::json;
+use std::fmt::Write;
 
 use app_domains::flows::models::{Action, Chroot, Condition, Definition, Operator, ValueType};
 
@@ -113,19 +114,19 @@ fn round_trips_through_yaml() {
 /// step is declared with agent `x`.
 fn flow_with_steps(steps: &[(&str, &str)]) -> String {
     let mut contexts: Vec<&str> = steps.iter().map(|(_, context)| *context).collect();
-    contexts.sort();
+    contexts.sort_unstable();
     contexts.dedup();
 
     let mut yaml = String::from("version: 1\nmetadata: { name: f }\nspec:\n  contexts:");
     for context in contexts {
-        yaml.push_str(&format!("\n    {}: {{ agent: x }}", context));
+        let _ = write!(yaml, "\n    {context}: {{ agent: x }}");
     }
     yaml.push_str("\n  steps:");
     for (name, context) in steps {
-        yaml.push_str(&format!(
-            "\n    - {{ name: {}, context: {}, type: agent, arguments: {{ prompt: hi }} }}",
-            name, context
-        ));
+        let _ = write!(
+            yaml,
+            "\n    - {{ name: {name}, context: {context}, type: agent, arguments: {{ prompt: hi }} }}"
+        );
     }
     yaml
 }
@@ -228,7 +229,7 @@ fn rejects_unknown_fields() {
 
 #[test]
 fn rejects_the_old_action_wrapper() {
-    let yaml = r#"
+    let yaml = r"
 version: 1
 metadata: { name: f }
 spec:
@@ -238,7 +239,7 @@ spec:
     - name: a
       context: c
       action: { type: agent, arguments: { prompt: hi } }
-"#;
+";
     parse_error(yaml);
 }
 
@@ -254,8 +255,7 @@ fn rejects_empty_webhook_token() {
 /// A flow with context `c` and the given steps, indented by four spaces.
 fn flow_yaml(steps: &str) -> String {
     format!(
-        "version: 1\nmetadata: {{ name: f }}\nspec:\n  contexts:\n    c: {{ agent: x }}\n  steps:\n{}",
-        steps
+        "version: 1\nmetadata: {{ name: f }}\nspec:\n  contexts:\n    c: {{ agent: x }}\n  steps:\n{steps}"
     )
 }
 
@@ -303,8 +303,7 @@ fn parses_nested_conditions() {
 fn rejects_empty_condition_lists() {
     for when in ["[]", "[{ any: [] }]", "[{ all: [{ any: [] }] }]"] {
         let yaml = flow_yaml(&format!(
-            "    - {{ name: a, context: c, type: agent, when: {}, arguments: {{ prompt: hi }} }}",
-            when
+            "    - {{ name: a, context: c, type: agent, when: {when}, arguments: {{ prompt: hi }} }}"
         ));
         assert!(validation_error(&yaml).contains("is empty"), "{}", when);
     }
@@ -318,8 +317,7 @@ fn rejects_unknown_operators_and_keys() {
         "{ none: [{ left: a, operator: \"==\", right: b }] }",
     ] {
         let yaml = flow_yaml(&format!(
-            "    - {{ name: a, context: c, type: agent, when: [{}], arguments: {{ prompt: hi }} }}",
-            item
+            "    - {{ name: a, context: c, type: agent, when: [{item}], arguments: {{ prompt: hi }} }}"
         ));
         parse_error(&yaml);
     }
@@ -352,12 +350,12 @@ fn compares_with_operators() {
             .internal_message
             .contains("not a number")
     );
-    assert!(
+    assert_eq!(
         Operator::Match
             .compare(&ctx, "a", "(")
             .unwrap_err()
-            .translation_key
-            == "regex_invalid"
+            .translation_key,
+        "regex_invalid"
     );
 }
 
@@ -390,10 +388,8 @@ fn rejects_invalid_loops() {
     assert!(validation_error(&with_context).contains("step 'l': a loop has no context"));
 
     for max in ["0", "101"] {
-        let yaml = flow_yaml(LOOP).replace(
-            "arguments:\n",
-            &format!("arguments:\n        max: {}\n", max),
-        );
+        let yaml =
+            flow_yaml(LOOP).replace("arguments:\n", &format!("arguments:\n        max: {max}\n"));
         assert!(
             validation_error(&yaml).contains("between 1 and 100"),
             "{}",
@@ -402,8 +398,7 @@ fn rejects_invalid_loops() {
     }
 
     let empty = flow_yaml(&format!(
-        "    - {{ name: l, type: loop, arguments: {{ steps: [] }} }}\n    - {}",
-        AGENT
+        "    - {{ name: l, type: loop, arguments: {{ steps: [] }} }}\n    - {AGENT}"
     ));
     assert!(validation_error(&empty).contains("arguments.steps is empty"));
 
@@ -417,15 +412,14 @@ fn rejects_invalid_loops() {
 #[test]
 fn rejects_agent_step_without_context() {
     let yaml = flow_yaml(&format!(
-        "    - {{ name: b, type: agent, arguments: {{ prompt: hi }} }}\n    - {}",
-        AGENT
+        "    - {{ name: b, type: agent, arguments: {{ prompt: hi }} }}\n    - {AGENT}"
     ));
     assert!(validation_error(&yaml).contains("step 'b': context is missing"));
 }
 
 #[test]
 fn checks_names_and_contexts_inside_loops() {
-    let duplicate = flow_yaml(&format!("{}    - {}\n", LOOP, AGENT));
+    let duplicate = flow_yaml(&format!("{LOOP}    - {AGENT}\n"));
     assert!(validation_error(&duplicate).contains("step name 'a' is used more than once"));
 
     let unknown = flow_yaml(LOOP).replace("context: c", "context: d");
@@ -439,9 +433,9 @@ fn checks_names_and_contexts_inside_loops() {
 /// `flow_yaml` with `spec.arguments` set to `arguments`, indented by four
 /// spaces.
 fn flow_with_arguments(arguments: &str) -> String {
-    flow_yaml(&format!("    - {}", AGENT)).replace(
+    flow_yaml(&format!("    - {AGENT}")).replace(
         "  contexts:",
-        &format!("  arguments:\n{}\n  contexts:", arguments),
+        &format!("  arguments:\n{arguments}\n  contexts:"),
     )
 }
 
@@ -491,8 +485,7 @@ fn with_webhook(arguments: &str, mapping: &str) -> String {
     flow_with_arguments(arguments).replace(
         "  steps:",
         &format!(
-            "  triggers:\n    webhook: {{ name: w, token: t, arguments: {} }}\n  steps:",
-            mapping
+            "  triggers:\n    webhook: {{ name: w, token: t, arguments: {mapping} }}\n  steps:"
         ),
     )
 }
@@ -531,8 +524,7 @@ const SET: &str = r#"
 #[test]
 fn parses_set_and_flow_steps() {
     let yaml = flow_yaml(&format!(
-        "{}    - {{ name: f, type: flow, arguments: {{ flow: other, arguments: {{ x: \"{{{{ Variables.n }}}}\" }} }} }}\n    - {}",
-        SET, AGENT
+        "{SET}    - {{ name: f, type: flow, arguments: {{ flow: other, arguments: {{ x: \"{{{{ Variables.n }}}}\" }} }} }}\n    - {AGENT}"
     ));
     let flow = parse(&yaml);
     let (ctx, _) = support::temp_context();
@@ -556,7 +548,7 @@ fn parses_set_and_flow_steps() {
 #[test]
 fn rejects_invalid_set_steps() {
     let set = |replace: &str, with: &str| {
-        flow_yaml(&format!("{}    - {}", SET, AGENT)).replace(replace, with)
+        flow_yaml(&format!("{SET}    - {AGENT}")).replace(replace, with)
     };
 
     assert!(
@@ -574,8 +566,7 @@ fn rejects_invalid_set_steps() {
     );
     assert!(
         validation_error(&flow_yaml(&format!(
-            "    - {{ name: s, type: set, arguments: {{}} }}\n    - {}",
-            AGENT
+            "    - {{ name: s, type: set, arguments: {{}} }}\n    - {AGENT}"
         )))
         .contains("arguments is empty")
     );
@@ -590,8 +581,7 @@ fn rejects_invalid_set_steps() {
 fn rejects_invalid_flow_steps() {
     let call = |arguments: &str| {
         flow_yaml(&format!(
-            "    - {{ name: f, type: flow, arguments: {} }}\n    - {}",
-            arguments, AGENT
+            "    - {{ name: f, type: flow, arguments: {arguments} }}\n    - {AGENT}"
         ))
     };
 
@@ -610,7 +600,7 @@ fn rejects_invalid_flow_steps() {
 #[test]
 fn arguments_are_optional() {
     let (ctx, _) = support::temp_context();
-    let without = parse(&flow_yaml(&format!("    - {}", AGENT)));
+    let without = parse(&flow_yaml(&format!("    - {AGENT}")));
     without.validate(&ctx).unwrap();
     assert!(without.spec.arguments.is_empty());
 

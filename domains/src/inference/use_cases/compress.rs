@@ -62,7 +62,7 @@ impl Inference {
             &agent,
         );
         let mut summarizer =
-            Conversation::new(ctx, system_prompt, agent, vec![], conversation.chroot())?;
+            Conversation::new(system_prompt, agent, vec![], conversation.chroot().clone());
         summarizer.insert_message(Message::user(user_message, summarizer.agent()), None);
 
         debug!(
@@ -77,7 +77,7 @@ impl Inference {
             app_error!(
                 Internal,
                 "inference_failed",
-                &format!("Failed to compress the conversation: {}", message),
+                &format!("Failed to compress the conversation: {message}"),
                 ctx.clone()
             )
         };

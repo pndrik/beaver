@@ -8,6 +8,7 @@ use git2::{
 use ssh2::{CheckResult, KnownHostFileKind, Session};
 
 use super::GitRepository;
+use crate::tools::embedded::git::hardening;
 
 impl GitRepository {
     pub(super) fn local_ref(branch: &str) -> String {
@@ -66,7 +67,7 @@ impl GitRepository {
                 let mut ssh2_known_hosts = Session::new().unwrap().known_hosts().unwrap();
                 for known_host in &known_hosts {
                     ssh2_known_hosts
-                        .read_str(&known_host, KnownHostFileKind::OpenSSH)
+                        .read_str(known_host, KnownHostFileKind::OpenSSH)
                         .unwrap();
                 }
 
@@ -76,20 +77,17 @@ impl GitRepository {
                     }
                     CheckResult::Mismatch => {
                         return Err(Error::from_str(&format!(
-                            "ssh host key mismatch for host '{}'",
-                            host
+                            "ssh host key mismatch for host '{host}'"
                         )));
                     }
                     CheckResult::NotFound => {
                         return Err(Error::from_str(&format!(
-                            "ssh host key not found for host '{}'",
-                            host
+                            "ssh host key not found for host '{host}'"
                         )));
                     }
                     CheckResult::Failure => {
                         return Err(Error::from_str(&format!(
-                            "failed to check ssh host key for host '{}'",
-                            host
+                            "failed to check ssh host key for host '{host}'"
                         )));
                     }
                 }
@@ -120,7 +118,7 @@ impl GitRepository {
     }
 
     pub(super) fn open(&self) -> Result<Git2Repository, Error> {
-        Git2Repository::open(&self.path)
+        hardening::open_contained(&self.path)
     }
 
     pub(super) fn remote<'a>(&self, repository: &'a Git2Repository) -> Result<Remote<'a>, Error> {
@@ -146,11 +144,7 @@ impl GitRepository {
         Ok(output)
     }
 
-    pub(super) fn ensure_local_branch(
-        &self,
-        repo: &Git2Repository,
-        branch: &str,
-    ) -> Result<(), Error> {
+    pub(super) fn ensure_local_branch(repo: &Git2Repository, branch: &str) -> Result<(), Error> {
         if repo.refname_to_id(&Self::local_ref(branch)).is_ok() {
             return Ok(());
         }

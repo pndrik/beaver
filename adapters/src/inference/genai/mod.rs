@@ -49,10 +49,9 @@ impl InferenceProvider for GenAi {
         conversation: &mut Conversation,
     ) -> Result<(), AppError> {
         let client = self.get_client(ctx).await?;
-        let chat_options = self.get_options(ctx, conversation.agent().model(), options)?;
-        let chat_request = self
-            .get_chat_request(conversation)
-            .with_tools(self.get_tools(ctx, conversation)?);
+        let chat_options = GenAi::get_options(ctx, conversation.agent().model(), options)?;
+        let chat_request =
+            GenAi::get_chat_request(conversation).with_tools(GenAi::get_tools(ctx, conversation)?);
 
         let chat_response = client
             .exec_chat(
@@ -65,7 +64,7 @@ impl InferenceProvider for GenAi {
                 app_error!(
                     Internal,
                     "inference_failed",
-                    &format!("Failed to execute inference request: {}", e),
+                    &format!("Failed to execute inference request: {e}"),
                     ctx.clone()
                 )
             })?;
@@ -79,8 +78,8 @@ impl InferenceProvider for GenAi {
         );
 
         let usage = Usage {
-            input: usage.prompt_tokens.unwrap_or(0).max(0) as u64,
-            output: usage.completion_tokens.unwrap_or(0).max(0) as u64,
+            input: u64::try_from(usage.prompt_tokens.unwrap_or(0)).unwrap_or(0),
+            output: u64::try_from(usage.completion_tokens.unwrap_or(0)).unwrap_or(0),
         };
 
         let content = chat_response.first_text().map(|mut text| {
@@ -95,7 +94,7 @@ impl InferenceProvider for GenAi {
             text.to_string()
         });
 
-        let tool_calls = self.tool_calls_to_tool_calls(ctx, chat_response.into_tool_calls())?;
+        let tool_calls = GenAi::tool_calls_to_tool_calls(ctx, &chat_response.into_tool_calls())?;
         conversation.insert_message(
             Message::agent(conversation.agent(), content, tool_calls, usage),
             None,

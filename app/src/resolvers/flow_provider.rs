@@ -26,10 +26,7 @@ pub async fn flow_provider(
         return Err(app_error!(
             Internal,
             "bootstrap_failed",
-            &format!(
-                "Unsupported flow provider: {}. Only 'file' is supported.",
-                provider_name
-            ),
+            &format!("Unsupported flow provider: {provider_name}. Only 'file' is supported."),
             ctx.clone()
         ));
     }

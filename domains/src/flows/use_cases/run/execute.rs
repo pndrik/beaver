@@ -35,7 +35,7 @@ impl Flows {
             .await;
 
             for chroot in &run.delete_on_finish {
-                chroot::cleanup(ctx, chroot).await;
+                chroot::cleanup(ctx, &self.file_system, chroot).await;
             }
 
             if result.is_ok() {

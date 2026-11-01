@@ -4,13 +4,14 @@
 use async_trait::async_trait;
 use regex::Regex;
 use serde::Deserialize;
-use std::{fs::File, io::Read};
-use walkdir::WalkDir;
 
 use super::super::permissions;
 use app_domains::{
     app_error,
-    core::models::{AppContext, AppError},
+    core::models::{
+        AppContext, AppError,
+        file::{self, Chroot},
+    },
     inference::models::Conversation,
     tools::{
         models::{Call, Schema, SchemaField, SchemaFieldType, ToolPermission},
@@ -21,7 +22,6 @@ use app_domains::{
 const NAME: &str = "file_search";
 const DESCRIPTION: &str =
     "Recursively searches files (max 10MB) for content matching a regex pattern.";
-const MAX_DEPTH: usize = 1000;
 const MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_LINE_LENGTH_CHARS: usize = 100;
 
@@ -132,7 +132,7 @@ impl Tool for Search {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
@@ -146,7 +146,7 @@ impl Tool for Search {
             ));
         }
 
-        let path = permissions::absolute_path(ctx, conversation, &permissions, &args.path)?;
+        let path = permissions::resolve(ctx, conversation, &permissions, &args.path).await?;
         let regex = Regex::new(&args.pattern).map_err(|e| {
             app_error!(
                 Validation,
@@ -156,16 +156,24 @@ impl Tool for Search {
             )
         })?;
 
-        let depth = if args.recursive { MAX_DEPTH } else { 1 };
-        let matches = search_directory_contents(
-            ctx,
-            &path.to_string_lossy(),
-            &regex,
-            depth,
-            args.max_results,
-            &args.exclude,
-        )
-        .await?;
+        let depth = if args.recursive {
+            0..=usize::MAX
+        } else {
+            0..=1
+        };
+        let chroot = conversation.chroot();
+        let files = chroot
+            .find(
+                ctx,
+                path.as_str(),
+                None,
+                &[file::Kind::File],
+                depth,
+                &args.exclude,
+                None,
+            )
+            .await?;
+        let matches = search_files(ctx, chroot, files, &regex, args.max_results).await;
 
         if matches.is_empty() {
             return Ok("No matching file content found.".to_string());
@@ -173,63 +181,30 @@ impl Tool for Search {
 
         let result: Vec<String> = matches
             .into_iter()
-            .map(|m| {
-                format!(
-                    "{}:{} {}",
-                    m.path.strip_prefix(conversation.chroot()).unwrap_or("/"),
-                    m.line_number,
-                    m.line
-                )
-            })
+            .map(|m| format!("{}:{} {}", m.path, m.line_number, m.line))
             .collect();
 
         Ok("Path:Line Match\n".to_string() + &result.join("\n"))
     }
 }
 
-fn is_excluded(entry: &walkdir::DirEntry, exclude: &[String]) -> bool {
-    let name = entry.file_name().to_string_lossy();
-    exclude.iter().any(|excluded| excluded == name.as_ref())
-}
-
-async fn search_directory_contents(
-    _ctx: &AppContext,
-    path: &str,
+async fn search_files(
+    ctx: &AppContext,
+    chroot: &Chroot,
+    files: Vec<file::Entry>,
     pattern: &Regex,
-    depth: usize,
     max_results: u64,
-    exclude: &[String],
-) -> Result<Vec<MatchEntry>, AppError> {
+) -> Vec<MatchEntry> {
     let mut matches = Vec::new();
 
-    for entry in WalkDir::new(path)
-        .max_depth(depth)
-        .into_iter()
-        .filter_entry(|e| !is_excluded(e, exclude))
-    {
-        let Ok(entry) = entry else {
+    for file::Entry { path, metadata } in files {
+        if metadata.size > MAX_FILE_SIZE_BYTES {
+            continue;
+        }
+
+        let Ok(content) = chroot.read_to_string(ctx, path.as_str()).await else {
             continue;
         };
-
-        if !entry.file_type().is_file() {
-            continue;
-        }
-
-        if let Ok(metadata) = entry.metadata() {
-            if metadata.len() > MAX_FILE_SIZE_BYTES {
-                continue;
-            }
-        }
-
-        let mut file = match File::open(entry.path()) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
-
-        let mut content = String::new();
-        if file.read_to_string(&mut content).is_err() {
-            continue;
-        }
 
         for (idx, line) in content.lines().enumerate() {
             if pattern.is_match(line) {
@@ -239,17 +214,17 @@ async fn search_directory_contents(
                 }
 
                 matches.push(MatchEntry {
-                    path: entry.path().to_string_lossy().to_string(),
+                    path: path.to_string(),
                     line_number: idx + 1,
                     line: truncated_line,
                 });
 
-                if matches.len() >= max_results as usize {
-                    return Ok(matches);
+                if matches.len() >= usize::try_from(max_results).unwrap_or(usize::MAX) {
+                    return matches;
                 }
             }
         }
     }
 
-    Ok(matches)
+    matches
 }

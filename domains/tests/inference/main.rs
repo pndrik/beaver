@@ -5,7 +5,11 @@
 
 mod support;
 
-use app_domains::inference::models::{AgentInference, Compression, Message, Model, Options};
+use std::collections::BTreeMap;
+
+use app_domains::inference::models::{
+    AgentInference, Compression, ConversationValue, Message, Model, Options,
+};
 use support::{compression, fixture, fixture_with_options};
 
 fn summaries(messages: &[Message]) -> Vec<&str> {
@@ -55,7 +59,7 @@ async fn disabled_compression_keeps_the_history() {
     fixture.say("two").await;
     fixture.say("three").await;
 
-    assert!(summaries(fixture.conversation.messages()).is_empty());
+    assert_eq!(summaries(fixture.conversation.messages()), [] as [&str; 0]);
     let calls = fixture.scripted.calls();
     assert_eq!(calls.len(), 3);
     assert_eq!(
@@ -85,12 +89,73 @@ async fn the_message_limit_inserts_a_summary_before_the_latest_message() {
 }
 
 #[tokio::test]
+async fn conversation_values_can_be_set_replaced_and_removed() {
+    let mut fixture = fixture(Compression::default()).await;
+    let conversation = &mut fixture.conversation;
+    assert_eq!(conversation.value("key"), None);
+
+    conversation.set_value("key", ConversationValue::String("one".to_string()));
+    assert_eq!(
+        conversation.value("key"),
+        Some(&ConversationValue::String("one".to_string()))
+    );
+
+    conversation.set_value("key", ConversationValue::Integer(2));
+    assert_eq!(
+        conversation.value("key"),
+        Some(&ConversationValue::Integer(2))
+    );
+
+    assert_eq!(
+        conversation.remove_value("key"),
+        Some(ConversationValue::Integer(2))
+    );
+    assert_eq!(conversation.value("key"), None);
+    assert_eq!(conversation.remove_value("key"), None);
+
+    let map = ConversationValue::Map(BTreeMap::from([
+        (
+            "name".to_string(),
+            ConversationValue::String("a".to_string()),
+        ),
+        ("size".to_string(), ConversationValue::Integer(i64::MAX)),
+        ("ratio".to_string(), ConversationValue::Float(0.5)),
+        (
+            "nested".to_string(),
+            ConversationValue::Map(BTreeMap::from([(
+                "inner".to_string(),
+                ConversationValue::Integer(1),
+            )])),
+        ),
+    ]));
+    conversation.set_value("map", map.clone());
+    conversation.set_value("float", ConversationValue::Float(1.5));
+    assert_eq!(conversation.value("map"), Some(&map));
+    assert_eq!(
+        conversation.value("float"),
+        Some(&ConversationValue::Float(1.5))
+    );
+}
+
+#[tokio::test]
+async fn compression_keeps_the_conversation_values() {
+    let mut fixture = fixture(compression(None, Some(3))).await;
+    let value = ConversationValue::String("kept".to_string());
+    fixture.conversation.set_value("key", value.clone());
+    fixture.say("one").await;
+    fixture.say("two").await;
+
+    assert_eq!(summaries(fixture.conversation.messages()).len(), 1);
+    assert_eq!(fixture.conversation.value("key"), Some(&value));
+}
+
+#[tokio::test]
 async fn the_token_limit_triggers_on_the_reported_usage() {
     let mut below = fixture(compression(Some(u64::MAX), None)).await;
     below.say("one").await;
     let tokens = below.conversation.tokens();
     below.say("two").await;
-    assert!(summaries(below.conversation.messages()).is_empty());
+    assert_eq!(summaries(below.conversation.messages()), [] as [&str; 0]);
 
     let mut fixture = fixture(compression(Some(tokens), None)).await;
     fixture.say("one").await;

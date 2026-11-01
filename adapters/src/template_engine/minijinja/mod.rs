@@ -43,7 +43,7 @@ fn new_environment(ctx: &AppContext) -> Result<Environment<'static>, AppError> {
                 app_error!(
                     Internal,
                     "template_failed",
-                    &format!("Failed to build template syntax: {}", e),
+                    &format!("Failed to build template syntax: {e}"),
                     ctx.clone()
                 )
             })?,
@@ -116,7 +116,7 @@ fn missing_paths(
         if path_exists(values, &path) {
             continue;
         }
-        let path = match path.strip_suffix(&format!(".{}", LAST_METHOD)) {
+        let path = match path.strip_suffix(&format!(".{LAST_METHOD}")) {
             Some(list) if !path_exists(values, list) => list.to_string(),
             _ => path,
         };
@@ -142,7 +142,7 @@ impl TemplateEngine for MiniJinjaTemplateEngine {
                 app_error!(
                     Internal,
                     "template_failed",
-                    &format!("Failed to parse template: {}", e),
+                    &format!("Failed to parse template: {e}"),
                     ctx.clone()
                 )
             })?;
@@ -150,7 +150,7 @@ impl TemplateEngine for MiniJinjaTemplateEngine {
             app_error!(
                 Internal,
                 "template_failed",
-                &format!("Failed to load template: {}", e),
+                &format!("Failed to load template: {e}"),
                 ctx.clone()
             )
         })?;
@@ -164,7 +164,7 @@ impl TemplateEngine for MiniJinjaTemplateEngine {
                 app_error!(
                     Internal,
                     "template_failed",
-                    &format!("Failed to render template: {}", e),
+                    &format!("Failed to render template: {e}"),
                     ctx.clone()
                 )
             })

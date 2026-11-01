@@ -5,14 +5,9 @@ use serde_json::{Map, Value};
 use std::sync::Arc;
 
 use app_adapters::{
-    agent,
-    configuration::ConfigurationMap,
-    context::ContextStandard,
-    flows,
-    inference::Scripted,
-    logging::Memory,
-    template_engine::MiniJinjaTemplateEngine,
-    tools::{output_writer, provider::EchoProvider},
+    agent, configuration::ConfigurationMap, context::ContextStandard, file_system, flows,
+    inference::Scripted, logging::Memory, template_engine::MiniJinjaTemplateEngine,
+    tools::provider::EchoProvider,
 };
 use app_domains::{
     core::{
@@ -29,11 +24,10 @@ use app_domains::{
 
 pub const TRACE_ID: &str = "test-trace";
 
-pub fn context(chroot: &str) -> (AppContext, Memory) {
-    let configuration: ConfigurationMap = [("context.chroot", chroot)].into_iter().collect();
+pub fn temp_context() -> (AppContext, Memory) {
     let ctx = AppContext::new(Arc::new(ContextStandard::new(
         TRACE_ID.to_string(),
-        Arc::new(configuration),
+        Arc::new(ConfigurationMap::default()),
     )));
     let logger = Memory::new();
     logger.init(&ctx, "trace").unwrap();
@@ -71,22 +65,12 @@ impl Context for TenantContext {
 }
 
 pub fn tenant_context() -> (AppContext, Memory) {
-    let configuration: ConfigurationMap = [(
-        "context.chroot",
-        std::env::temp_dir().to_string_lossy().as_ref(),
-    )]
-    .into_iter()
-    .collect();
     let ctx = AppContext::new(Arc::new(TenantContext {
-        configuration: Arc::new(configuration),
+        configuration: Arc::new(ConfigurationMap::default()),
     }));
     let logger = Memory::new();
     logger.init(&ctx, "trace").unwrap();
     (ctx, logger)
-}
-
-pub fn temp_context() -> (AppContext, Memory) {
-    context(&std::env::temp_dir().to_string_lossy())
 }
 
 fn agent(name: &str) -> Agent {
@@ -109,12 +93,14 @@ pub struct Fixture {
     pub inference: Inference,
     pub tools: Tools,
     pub scripted: Arc<Scripted>,
+    pub file_system: Arc<file_system::Memory>,
 }
 
 /// Knows the agents `coder`, `calculator` and `dispatcher` (as used by the
 /// examples), answers with the scripted provider and offers the
-/// `echo` and `fail` tools.
+/// `echo` and `fail` tools. Files live in memory.
 pub fn fixture(ctx: &AppContext, flows: Vec<Definition>) -> Fixture {
+    let file_system = Arc::new(file_system::Memory::new());
     let scripted = Arc::new(Scripted::new());
     let inference = Inference::new(
         Arc::new(agent::Memory::new(vec![
@@ -128,18 +114,16 @@ pub fn fixture(ctx: &AppContext, flows: Vec<Definition>) -> Fixture {
     let flows = Flows::new(
         Arc::new(flows::Memory::new(flows)),
         Arc::new(MiniJinjaTemplateEngine::new(ctx)),
+        file_system.clone(),
     )
     .unwrap();
-    let tools = Tools::new(
-        vec![Arc::new(EchoProvider::new(ctx))],
-        Arc::new(output_writer::Memory::new()),
-    )
-    .unwrap();
+    let tools = Tools::new(vec![Arc::new(EchoProvider::new(ctx))]).unwrap();
 
     Fixture {
         flows,
         inference,
         tools,
         scripted,
+        file_system,
     }
 }

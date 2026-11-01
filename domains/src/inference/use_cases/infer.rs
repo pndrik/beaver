@@ -84,10 +84,10 @@ impl Inference {
                     return Ok(false);
                 }
 
-                if let Some(sentinel) = leave_tool {
-                    if tool_calls.iter().any(|call| call.name == sentinel) {
-                        return Ok(true);
-                    }
+                if let Some(sentinel) = leave_tool
+                    && tool_calls.iter().any(|call| call.name == sentinel)
+                {
+                    return Ok(true);
                 }
 
                 tools.call_many(ctx, conversation, self, tool_calls).await?;
@@ -101,8 +101,7 @@ impl Inference {
             conversation.insert_message(
                 Message::tool(
                     format!(
-                        "Error: \nMaximum number of tool iterations ({}) exceeded",
-                        MAX_INFERENCE_TOOL_ITERATIONS
+                        "Error: \nMaximum number of tool iterations ({MAX_INFERENCE_TOOL_ITERATIONS}) exceeded"
                     ),
                     conversation.agent(),
                 ),

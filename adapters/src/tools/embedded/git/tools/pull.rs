@@ -74,23 +74,15 @@ impl Tool for Pull {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = permissions::existing_repo_path(ctx, conversation, &permissions, &args.path)?;
-        let path_str = path.to_str().ok_or_else(|| {
-            app_error!(
-                Validation,
-                "tool_failed",
-                &format!("Path '{}' is not valid UTF-8", args.path),
-                ctx.clone()
-            )
-        })?;
+        let local = permissions::repository(ctx, conversation, &permissions, &args.path).await?;
 
         let repository = configuration::get_repository_by_url(ctx, &args.url).await?;
-        let git_repository = GitRepository::new(repository, path_str);
+        let git_repository = GitRepository::new(repository, local.path());
 
         git_repository.pull().map_err(|e| {
             app_error!(
@@ -100,6 +92,8 @@ impl Tool for Pull {
                 ctx.clone()
             )
         })?;
+
+        local.sync(ctx).await?;
 
         Ok(format!("Pulled repository '{}'", args.path))
     }

@@ -12,9 +12,10 @@ pub enum LiteralOrRegex {
 
 impl LiteralOrRegex {
     pub fn parse(value: &str) -> Result<Self, regex::Error> {
-        match value.starts_with('^') {
-            true => Regex::new(value).map(Self::Regex),
-            false => Ok(Self::Literal(value.to_string())),
+        if value.starts_with('^') {
+            Regex::new(value).map(Self::Regex)
+        } else {
+            Ok(Self::Literal(value.to_string()))
         }
     }
 

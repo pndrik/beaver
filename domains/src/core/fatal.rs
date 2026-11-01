@@ -8,7 +8,7 @@ pub fn fatal(message: &str, error: &dyn Display) -> ! {
     if tracing::dispatcher::has_been_set() {
         error!(error = %error, "{}", message);
     } else {
-        eprintln!("{}: {}", message, error);
+        eprintln!("{message}: {error}");
     }
     process::exit(1)
 }

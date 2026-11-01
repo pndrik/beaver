@@ -41,19 +41,27 @@ impl Flows {
                         .render(ctx, &declared.path, &values)
                         .await
                         .map_err(failed)?;
-                    let chroot = chroot::prepare(ctx, &path, declared.create, declared.delete)
-                        .await
-                        .map_err(failed)?;
+                    let chroot = chroot::prepare(
+                        ctx,
+                        &self.file_system,
+                        &path,
+                        declared.create,
+                        declared.delete,
+                    )
+                    .await
+                    .map_err(failed)?;
                     if declared.delete {
-                        run.delete_when_finished(chroot.clone());
+                        run.delete_when_finished(chroot.root().clone());
                     }
                     chroot
                 }
-                None => chroot::global_chroot(ctx).await.map_err(failed)?,
+                None => chroot::global(ctx, &self.file_system)
+                    .await
+                    .map_err(failed)?,
             };
 
             let conversation = inference
-                .new_conversation(ctx, &declaration.agent, tools, &chroot.to_string_lossy())
+                .new_conversation(ctx, &declaration.agent, tools, chroot)
                 .await
                 .map_err(failed)?;
             run.contexts

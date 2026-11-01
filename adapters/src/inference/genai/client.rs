@@ -49,7 +49,7 @@ impl GenAi {
                     ModelAdapter::Gemini => AdapterKind::Gemini,
                 };
 
-                let model = ModelIden::new(adapter_kind, model.model_name.clone());
+                let model = ModelIden::new(adapter_kind, model.model_name);
 
                 Ok(ServiceTarget {
                     endpoint,
@@ -71,7 +71,7 @@ impl GenAi {
                 app_error!(
                     Internal,
                     "inference_failed",
-                    &format!("Failed to build inference client: {}", e),
+                    &format!("Failed to build inference client: {e}"),
                     ctx.clone()
                 )
             })

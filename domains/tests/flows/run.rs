@@ -2,11 +2,17 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use serde_json::{Map, Value, json};
-use tempfile::TempDir;
+use std::sync::Arc;
 use tracing::Level;
 
-use app_adapters::{inference::ScriptedCall, logging::Memory};
-use app_domains::{core::models::AppError, flows::models::Definition};
+use app_adapters::{file_system, inference::ScriptedCall, logging::Memory};
+use app_domains::{
+    core::{
+        models::{AppContext, AppError, ErrorKind, file},
+        traits::FileSystem,
+    },
+    flows::models::Definition,
+};
 
 use crate::support::{self, Fixture};
 
@@ -14,18 +20,55 @@ struct Run {
     result: Result<(), AppError>,
     calls: Vec<ScriptedCall>,
     logger: Memory,
-    /// The canonical global chroot.
-    chroot: String,
-    // Keeps the global chroot alive until the assertions ran.
-    _global: TempDir,
+    files: Files,
+}
+
+/// The files of a run.
+struct Files {
+    ctx: AppContext,
+    file_system: Arc<file_system::Memory>,
+}
+
+fn path(ctx: &AppContext, value: &str) -> file::Path {
+    file::Path::parse(ctx, value).unwrap()
+}
+
+impl Files {
+    async fn kind(&self, value: &str) -> Option<file::Kind> {
+        match self
+            .file_system
+            .metadata(&self.ctx, &path(&self.ctx, value))
+            .await
+        {
+            Err(err) if err.kind == ErrorKind::NotFound => None,
+            metadata => Some(metadata.unwrap().kind),
+        }
+    }
+
+    async fn is_dir(&self, value: &str) -> bool {
+        self.kind(value).await == Some(file::Kind::Directory)
+    }
+
+    async fn exists(&self, value: &str) -> bool {
+        self.kind(value).await.is_some()
+    }
+}
+
+/// Creates the directory `value` before the run.
+fn mkdir(value: &'static str) -> impl AsyncFnOnce(&AppContext, &file_system::Memory) {
+    async move |ctx, file_system| {
+        file_system
+            .mkdir(ctx, &path(ctx, value), true)
+            .await
+            .unwrap();
+    }
 }
 
 /// A validated flow. `arguments`, `contexts` and `steps` are indented by
 /// four spaces.
 fn definition(name: &str, arguments: &str, contexts: &str, steps: &str) -> Definition {
     let yaml = format!(
-        "version: 1\nmetadata: {{ name: {} }}\nspec:\n  arguments:\n{}\n  contexts:\n{}\n  steps:\n{}",
-        name, arguments, contexts, steps
+        "version: 1\nmetadata: {{ name: {name} }}\nspec:\n  arguments:\n{arguments}\n  contexts:\n{contexts}\n  steps:\n{steps}"
     );
     let flow: Definition = yaml_serde::from_str(&yaml).unwrap();
     let (ctx, _) = support::temp_context();
@@ -34,11 +77,11 @@ fn definition(name: &str, arguments: &str, contexts: &str, steps: &str) -> Defin
 }
 
 /// The arguments of `flow`.
-const ARGUMENTS: &str = r#"
+const ARGUMENTS: &str = r"
     title: {}
     mode: {}
     n: { type: number }
-    min: { type: float }"#;
+    min: { type: float }";
 
 fn flow(contexts: &str, steps: &str) -> Definition {
     definition("test_flow", ARGUMENTS, contexts, steps)
@@ -48,14 +91,18 @@ fn flow(contexts: &str, steps: &str) -> Definition {
 const CODER: &str = "    c: { agent: coder }";
 
 fn arguments(value: Value) -> Map<String, Value> {
-    value.as_object().unwrap().clone()
+    serde_json::from_value(value).unwrap()
 }
 
 async fn run(contexts: &str, steps: &str) -> Run {
-    run_with(contexts, steps, |_| {}).await
+    run_with(contexts, steps, async |_, _| {}).await
 }
 
-async fn run_with(contexts: &str, steps: &str, setup: impl FnOnce(&TempDir)) -> Run {
+async fn run_with(
+    contexts: &str,
+    steps: &str,
+    setup: impl AsyncFnOnce(&AppContext, &file_system::Memory),
+) -> Run {
     execute(
         flow(contexts, steps),
         json!({"title": "Fix bug", "mode": "fast"}),
@@ -66,7 +113,7 @@ async fn run_with(contexts: &str, steps: &str, setup: impl FnOnce(&TempDir)) -> 
 }
 
 async fn run_args(steps: &str, input: Value) -> Run {
-    execute(flow(CODER, steps), input, vec![], |_| {}).await
+    execute(flow(CODER, steps), input, vec![], async |_, _| {}).await
 }
 
 /// Runs `flow` with `input` as arguments. Flow steps can call `children`.
@@ -74,44 +121,37 @@ async fn execute(
     flow: Definition,
     input: Value,
     children: Vec<Definition>,
-    setup: impl FnOnce(&TempDir),
+    setup: impl AsyncFnOnce(&AppContext, &file_system::Memory),
 ) -> Run {
-    let global = tempfile::tempdir().unwrap();
-    setup(&global);
-    let (ctx, logger) = support::context(&global.path().to_string_lossy());
+    let (ctx, logger) = support::temp_context();
     let Fixture {
         flows,
         inference,
         tools,
         scripted,
+        file_system,
     } = support::fixture(&ctx, children);
+    setup(&ctx, &file_system).await;
 
     let result = flows
         .run(&ctx, &flow, &arguments(input), &inference, &tools)
         .await;
     let calls = scripted.calls();
-    let chroot = global
-        .path()
-        .canonicalize()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
 
     Run {
         result,
         calls,
         logger,
-        chroot,
-        _global: global,
+        files: Files { ctx, file_system },
     }
 }
 
 #[tokio::test]
 async fn reused_context_keeps_the_conversation() {
     let run = run(
-        r#"
+        r"
     c: { agent: coder }
-    d: { agent: coder }"#,
+    d: { agent: coder }",
         r#"
     - { name: first, context: c, type: agent, arguments: { prompt: "one" } }
     - { name: second, context: c, type: agent, arguments: { prompt: "two" } }
@@ -130,9 +170,9 @@ async fn reused_context_keeps_the_conversation() {
 #[tokio::test]
 async fn contexts_reach_later_prompts() {
     let run = run(
-        r#"
+        r"
     t: { agent: coder }
-    c: { agent: coder }"#,
+    c: { agent: coder }",
         r#"
     - name: tool_step
       context: t
@@ -154,15 +194,15 @@ async fn contexts_reach_later_prompts() {
     let first = &run.calls[0].prompt;
     assert!(first.starts_with("Name: echo\n"), "{}", first);
     assert!(
-        first.ends_with(&format!(
-            "Result: \necho Fix bug @ {}|fast|test_flow",
-            run.chroot
-        )),
+        first.ends_with(&format!("Result: \necho Fix bug @ {}|fast|test_flow", "/")),
         "{}",
         first
     );
-    assert_eq!(run.calls[1].prompt, format!("reply 1: {}|2|user", first));
-    assert!(run.logger.messages(Level::WARN).is_empty());
+    assert_eq!(run.calls[1].prompt, format!("reply 1: {first}|2|user"));
+    assert_eq!(
+        run.logger.messages(Level::WARN),
+        [] as [std::string::String; 0]
+    );
 }
 
 #[tokio::test]
@@ -208,13 +248,13 @@ async fn tool_step_output_reaches_the_conversation_of_the_context() {
     .await;
 
     run.result.unwrap();
-    let chroot = format!("{}/work", run.chroot);
+    let chroot = "/work";
     assert_eq!(run.calls[0].history, ["tool", "user"]);
     assert_eq!(run.calls[0].chroot, chroot);
     assert!(
         run.calls[0]
             .prompt
-            .ends_with(&format!("echo hi @ {}", chroot))
+            .ends_with(&format!("echo hi @ {chroot}"))
     );
 }
 
@@ -230,10 +270,10 @@ async fn steps_run_in_their_context_chroot() {
     .await;
 
     run.result.unwrap();
-    let expected = format!("{}/runs/test-trace", run.chroot);
+    let expected = "/runs/test-trace";
     assert_eq!(run.calls[0].chroot, expected);
     assert_eq!(run.calls[1].chroot, expected);
-    assert!(std::path::Path::new(&expected).is_dir());
+    assert!(run.files.is_dir(expected).await);
 }
 
 #[tokio::test]
@@ -252,8 +292,8 @@ async fn failing_step_stops_the_flow_and_cleans_up() {
     assert!(err.internal_message.contains("'test_flow'"));
     assert!(err.internal_message.contains("'broken'"));
     assert!(run.calls.is_empty());
-    assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
-    assert!(std::path::Path::new(&run.chroot).is_dir());
+    assert!(!run.files.exists("/runs/test-trace").await);
+    assert!(run.files.is_dir("/").await);
 }
 
 #[tokio::test]
@@ -271,9 +311,12 @@ async fn contexts_are_created_before_the_first_step() {
 
     run.result.unwrap();
     // `later` exists before its first step, with an empty conversation.
-    assert!(std::path::Path::new(&format!("{}/later", run.chroot)).is_dir());
-    assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
-    assert!(run.logger.messages(Level::WARN).is_empty());
+    assert!(run.files.is_dir("/later").await);
+    assert!(!run.files.exists("/runs/test-trace").await);
+    assert_eq!(
+        run.logger.messages(Level::WARN),
+        [] as [std::string::String; 0]
+    );
 }
 
 #[tokio::test]
@@ -297,7 +340,7 @@ async fn invalid_context_fails_before_any_step_runs_and_cleans_up() {
         err.internal_message
     );
     assert!(!step_logged(&run.logger, "Step started", "first"));
-    assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
+    assert!(!run.files.exists("/runs/test-trace").await);
 }
 
 #[tokio::test]
@@ -333,32 +376,45 @@ const ONE_STEP: &str = r#"
 async fn chroot_outside_the_global_chroot_is_rejected() {
     let outside = format!("escape-{}", std::process::id());
     let run = run(
-        &format!(
-            r#"    c: {{ agent: coder, chroot: {{ path: "../{}", create: true }} }}"#,
-            outside
-        ),
+        &format!(r#"    c: {{ agent: coder, chroot: {{ path: "../{outside}", create: true }} }}"#),
         ONE_STEP,
     )
     .await;
 
     assert_eq!(run.result.unwrap_err().translation_key, "access_violation");
     assert!(run.calls.is_empty());
-    let parent = std::path::Path::new(&run.chroot).parent().unwrap();
-    assert!(!parent.join(&outside).exists());
-
-    let run = run_absolute("/").await;
-    assert_eq!(run.result.unwrap_err().translation_key, "access_violation");
+    assert!(!run.files.exists(&format!("/{outside}")).await);
 }
 
-async fn run_absolute(path: &str) -> Run {
-    run(
-        &format!(
-            r#"    c: {{ agent: coder, chroot: {{ path: "{}" }} }}"#,
-            path
-        ),
+#[tokio::test]
+async fn absolute_and_relative_chroots_resolve_against_the_root() {
+    for path in ["/abs/dir", "abs/dir", "/abs/./dir/"] {
+        let run = run_with(
+            &format!(r#"    c: {{ agent: coder, chroot: {{ path: "{path}" }} }}"#),
+            ONE_STEP,
+            mkdir("/abs/dir"),
+        )
+        .await;
+        run.result.unwrap();
+        assert_eq!(run.calls[0].chroot, "/abs/dir", "{path}");
+    }
+}
+
+#[tokio::test]
+async fn chroots_can_not_be_files_or_symlinks_to_files() {
+    let run = run_with(
+        r#"    c: { agent: coder, chroot: { path: "file", create: true } }"#,
         ONE_STEP,
+        async |ctx, file_system| {
+            file_system
+                .write(ctx, &path(ctx, "/file"), b"x", file::WriteMode::Truncate)
+                .await
+                .unwrap();
+        },
     )
-    .await
+    .await;
+    assert!(run.result.is_err());
+    assert!(run.calls.is_empty());
 }
 
 #[tokio::test]
@@ -370,7 +426,7 @@ async fn deleting_the_global_chroot_is_rejected() {
     .await;
 
     assert_eq!(run.result.unwrap_err().translation_key, "access_violation");
-    assert!(std::path::Path::new(&run.chroot).is_dir());
+    assert!(run.files.is_dir("/").await);
 }
 
 #[tokio::test]
@@ -385,22 +441,22 @@ async fn missing_chroot_without_create_fails() {
     let run = run_with(
         r#"    c: { agent: coder, chroot: { path: "exists" } }"#,
         ONE_STEP,
-        |global| std::fs::create_dir(global.path().join("exists")).unwrap(),
+        mkdir("/exists"),
     )
     .await;
     run.result.unwrap();
-    assert!(run.calls[0].chroot.ends_with("/exists"));
+    assert_eq!(run.calls[0].chroot, "/exists");
 }
 
 #[tokio::test]
 async fn unknown_context_fails_before_any_step_runs() {
-    let global = tempfile::tempdir().unwrap();
-    let (ctx, _) = support::context(&global.path().to_string_lossy());
+    let (ctx, _) = support::temp_context();
     let Fixture {
         flows,
         inference,
         tools,
         scripted,
+        file_system,
     } = support::fixture(&ctx, vec![]);
     // Built directly, without the provider's validation.
     let flow: Definition = yaml_serde::from_str(
@@ -425,11 +481,12 @@ spec:
     assert_eq!(err.translation_key, "flow_invalid");
     assert!(err.internal_message.contains("unknown context 'd'"));
     assert!(scripted.calls().is_empty());
-    assert!(!global.path().join("work").exists());
+    let work = file_system.metadata(&ctx, &path(&ctx, "/work")).await;
+    assert_eq!(work.unwrap_err().kind, ErrorKind::NotFound);
 }
 
 fn step_logged(logger: &Memory, message: &str, step: &str) -> bool {
-    logger.contains(Level::INFO, message, &[("step", step)])
+    logger.contains(Level::DEBUG, message, &[("step", step)])
 }
 
 /// Whether a template referenced the undefined value `path`.
@@ -557,7 +614,10 @@ async fn loop_stops_when_until_is_true() {
     run.result.unwrap();
     assert_eq!(run.calls.len(), 3);
     assert_eq!(run.calls[2].prompt, "2|reply 2: x");
-    assert!(run.logger.messages(Level::WARN).is_empty());
+    assert_eq!(
+        run.logger.messages(Level::WARN),
+        [] as [std::string::String; 0]
+    );
 }
 
 #[tokio::test]
@@ -626,7 +686,7 @@ async fn failing_inner_step_fails_the_flow_and_cleans_up() {
             .starts_with("Flow 'test_flow' step 'broken' failed")
     );
     assert_eq!(run.calls.len(), 1);
-    assert!(!std::path::Path::new(&format!("{}/runs/test-trace", run.chroot)).exists());
+    assert!(!run.files.exists("/runs/test-trace").await);
 }
 
 const CHECKED: &str = r#"
@@ -666,11 +726,11 @@ async fn invalid_arguments_fail_before_any_step_runs() {
             definition("test_flow", CHECKED, CODER, PRINT),
             input.clone(),
             vec![],
-            |_| {},
+            async |_, _| {},
         )
         .await;
         let err = run.result.unwrap_err();
-        assert_eq!(err.translation_key, "flow_arguments_invalid", "{}", input);
+        assert_eq!(err.translation_key, "flow_arguments_invalid", "{input}");
         assert!(
             err.internal_message.contains(expected),
             "{}: {}",
@@ -687,7 +747,7 @@ async fn typed_arguments_are_rendered() {
         definition("test_flow", CHECKED, CODER, PRINT),
         json!({"name": "ok", "n": " 21 ", "f": "2.5"}),
         vec![],
-        |_| {},
+        async |_, _| {},
     )
     .await;
 
@@ -717,7 +777,7 @@ async fn set_extracts_converts_and_falls_back() {
     run.result.unwrap();
     assert_eq!(run.calls[1].prompt, "2|0|1.5|42");
     let warnings = run.logger.messages(Level::WARN);
-    assert_eq!(warnings.len(), 2, "{:?}", warnings);
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
     let invalid = "Invalid variable, using default";
     assert!(run.logger.contains(
         Level::WARN,
@@ -785,7 +845,10 @@ async fn variables_set_in_a_loop_drive_when_and_until() {
     run.result.unwrap();
     let prompts: Vec<&str> = run.calls.iter().map(|call| call.prompt.as_str()).collect();
     assert_eq!(prompts, ["i=2", "3"]);
-    assert!(run.logger.messages(Level::WARN).is_empty());
+    assert_eq!(
+        run.logger.messages(Level::WARN),
+        [] as [std::string::String; 0]
+    );
 }
 
 fn child() -> Definition {
@@ -813,7 +876,7 @@ async fn flow_step_runs_the_child_and_exposes_its_variables() {
         ),
         json!({"n": 21}),
         vec![child()],
-        |_| {},
+        async |_, _| {},
     )
     .await;
 
@@ -823,10 +886,11 @@ async fn flow_step_runs_the_child_and_exposes_its_variables() {
     assert_eq!(prompts, ["parent", "child 21|<NULL>", "42"]);
     assert_eq!(run.calls[1].history, ["user"]);
     assert_eq!(run.calls[2].history, ["user", "assistant", "user"]);
-    assert!(
-        run.logger
-            .contains(Level::INFO, "Flow finished", &[("flow", "child")])
-    );
+    assert!(run.logger.contains(
+        Level::INFO,
+        "Flow completed successfully",
+        &[("flow", "child")]
+    ));
 }
 
 #[tokio::test]
@@ -837,20 +901,19 @@ async fn flow_step_fails_on_invalid_child_arguments() {
                 CODER,
                 &format!(
                     r#"
-    - {{ name: call, type: flow, arguments: {{ flow: child, arguments: {} }} }}
+    - {{ name: call, type: flow, arguments: {{ flow: child, arguments: {mapping} }} }}
     - {{ name: never, context: c, type: agent, arguments: {{ prompt: "x" }} }}
-"#,
-                    mapping
+"#
                 ),
             ),
             json!({}),
             vec![child()],
-            |_| {},
+            async |_, _| {},
         )
         .await;
 
         let err = run.result.unwrap_err();
-        assert_eq!(err.translation_key, "flow_arguments_invalid", "{}", mapping);
+        assert_eq!(err.translation_key, "flow_arguments_invalid", "{mapping}");
         assert!(
             err.internal_message
                 .starts_with("Flow 'test_flow' step 'call' failed: Flow 'child'")
@@ -890,7 +953,7 @@ async fn flow_step_fails_with_the_child() {
         ),
         json!({}),
         vec![failing],
-        |_| {},
+        async |_, _| {},
     )
     .await;
     let err = run.result.unwrap_err();
@@ -912,7 +975,13 @@ async fn recursive_flow_steps_stop_at_the_depth_limit() {
     - { name: never, context: c, type: agent, arguments: { prompt: "x" } }
 "#,
     );
-    let run = execute(recursive.clone(), json!({}), vec![recursive], |_| {}).await;
+    let run = execute(
+        recursive.clone(),
+        json!({}),
+        vec![recursive],
+        async |_, _| {},
+    )
+    .await;
 
     let err = run.result.unwrap_err();
     assert_eq!(err.translation_key, "flow_call_too_deep");
@@ -941,7 +1010,7 @@ async fn pythagoras_example_calls_the_calculate_example() {
         pythagoras,
         json!({"a": "3", "b": 4}),
         vec![calculate],
-        |_| {},
+        async |_, _| {},
     )
     .await;
 
@@ -962,5 +1031,8 @@ async fn pythagoras_example_calls_the_calculate_example() {
         "{}",
         prompts[3]
     );
-    assert!(run.logger.messages(Level::WARN).is_empty());
+    assert_eq!(
+        run.logger.messages(Level::WARN),
+        [] as [std::string::String; 0]
+    );
 }

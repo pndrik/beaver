@@ -17,7 +17,7 @@ use crate::{configuration::ConfigurationMap, context::ContextStandard};
 struct Tenant(Arc<dyn Configuration + Send + Sync>);
 
 impl Context for Tenant {
-    fn trace_id(&self) -> &str {
+    fn trace_id(&self) -> &'static str {
         "t-1"
     }
 

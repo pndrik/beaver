@@ -27,9 +27,9 @@ impl EmbeddedProvider {
     pub fn new(_ctx: &AppContext, sandbox: Arc<dyn CodeSandbox + Send + Sync>) -> Self {
         Self {
             tool_sets: vec![
-                Arc::new(File::new()),
-                Arc::new(Git::new()),
-                Arc::new(JavaScript::new(sandbox)),
+                Arc::new(File::tool_set()),
+                Arc::new(Git::tool_set()),
+                Arc::new(JavaScript::tool_set(sandbox)),
             ],
         }
     }
@@ -54,16 +54,15 @@ impl ToolsProvider for EmbeddedProvider {
 
     async fn get(&self, ctx: &AppContext, name: &str) -> Result<Tool, AppError> {
         for tool_set in &self.tool_sets {
-            match tool_set.get(ctx, name).await {
-                Ok(tool) => return Ok(tool),
-                Err(_) => continue,
+            if let Ok(tool) = tool_set.get(ctx, name).await {
+                return Ok(tool);
             }
         }
 
         Err(app_error!(
             NotFound,
             "tool_not_found",
-            &format!("Tool with name '{}' not found", name),
+            &format!("Tool with name '{name}' not found"),
             ctx.clone()
         ))
     }
@@ -76,11 +75,8 @@ impl ToolsProvider for EmbeddedProvider {
         input: &Call,
     ) -> Result<String, AppError> {
         for tool_set in &self.tool_sets {
-            match tool_set.get(ctx, &input.name).await {
-                Err(_) => continue,
-                Ok(_) => {
-                    return tool_set.call(ctx, conversation, permissions, input).await;
-                }
+            if tool_set.get(ctx, &input.name).await.is_ok() {
+                return tool_set.call(ctx, conversation, permissions, input).await;
             }
         }
 

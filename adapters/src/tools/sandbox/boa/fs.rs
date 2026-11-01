@@ -5,74 +5,46 @@ use boa_engine::{
     Context, Finalize, JsNativeError, JsObject, JsResult, JsString, JsValue, NativeFunction, Trace,
     js_string, object::builtins::JsArray, property::Attribute,
 };
-use std::{
-    fs,
-    io::Write as _,
-    path::{Path, PathBuf},
-};
+use tokio::runtime::Handle;
 
 use app_domains::{
-    core::models::{AppContext, AppError},
-    inference::models::chroot,
+    core::models::{
+        AppContext, AppError,
+        file::{self, Chroot},
+    },
     tools::models::{SandboxFilesystemOperation, SandboxFilesystemScope, SandboxScopes},
 };
 
-type FsFunction = fn(&JsValue, &[JsValue], &Chroot, &mut Context) -> JsResult<JsValue>;
+type FsFunction = fn(&JsValue, &[JsValue], &Bindings, &mut Context) -> JsResult<JsValue>;
 
 #[derive(Trace, Finalize)]
-struct Chroot {
+struct Bindings {
     #[unsafe_ignore_trace]
     ctx: AppContext,
     #[unsafe_ignore_trace]
-    root: String,
+    chroot: Chroot,
     #[unsafe_ignore_trace]
-    canonical: PathBuf,
+    handle: Handle,
     #[unsafe_ignore_trace]
     scopes: SandboxScopes,
 }
 
-impl Chroot {
-    fn absolute(path: &str) -> JsResult<()> {
-        match path.starts_with('/') {
-            true => Ok(()),
-            false => Err(error(format!("Path must be absolute: '{}'", path))),
-        }
-    }
-
-    fn permit(
-        &self,
-        path: &str,
-        host: String,
-        operation: SandboxFilesystemOperation,
-    ) -> JsResult<String> {
-        let resolved = Path::new("/").join(
-            Path::new(&host)
-                .strip_prefix(&self.canonical)
-                .map_err(|_| error(format!("Path '{}' is outside of chroot", path)))?,
-        );
-        match self
-            .scopes
-            .allows_file(&resolved.to_string_lossy(), operation)
-        {
-            true => Ok(host),
-            false => Err(error(format!(
+impl Bindings {
+    /// `path` resolved in the chroot, if the scopes allow `operation` on it.
+    fn permit(&self, path: &str, operation: SandboxFilesystemOperation) -> JsResult<file::Path> {
+        let resolved = self
+            .handle
+            .block_on(self.chroot.resolve(&self.ctx, path))
+            .map_err(denied)?;
+        if self.scopes.allows_file(resolved.as_str(), operation) {
+            Ok(resolved)
+        } else {
+            Err(error(format!(
                 "Path '{}' is not allowed to {}",
                 path,
-                format!("{:?}", operation).to_lowercase()
-            ))),
+                format!("{operation:?}").to_lowercase()
+            )))
         }
-    }
-
-    fn readable(&self, path: &str) -> JsResult<String> {
-        Self::absolute(path)?;
-        let host = chroot::resolve_path(&self.ctx, &self.root, path).map_err(denied)?;
-        self.permit(path, host, SandboxFilesystemOperation::Read)
-    }
-
-    fn writable(&self, path: &str) -> JsResult<String> {
-        Self::absolute(path)?;
-        let host = chroot::resolve_new_path(&self.ctx, &self.root, path).map_err(denied)?;
-        self.permit(path, host, SandboxFilesystemOperation::Write)
     }
 }
 
@@ -95,55 +67,63 @@ fn argument(args: &[JsValue], index: usize, context: &mut Context) -> JsResult<S
     }
 }
 
-fn read_file(_: &JsValue, args: &[JsValue], root: &Chroot, ctx: &mut Context) -> JsResult<JsValue> {
+fn read_file(
+    _: &JsValue,
+    args: &[JsValue],
+    root: &Bindings,
+    ctx: &mut Context,
+) -> JsResult<JsValue> {
     let path = argument(args, 0, ctx)?;
-    let host = root.readable(&path)?;
-    if !Path::new(&host).is_file() {
-        return Err(error(format!("Path '{}' is not a file", path)));
-    }
-
-    let content = fs::read_to_string(&host)
-        .map_err(|e| error(format!("Failed to read '{}': {}", path, e)))?;
+    let resolved = root.permit(&path, SandboxFilesystemOperation::Read)?;
+    let content = root
+        .handle
+        .block_on(root.chroot.read_to_string(&root.ctx, resolved.as_str()))
+        .map_err(|e| error(format!("Failed to read '{}': {}", path, e.internal_message)))?;
     Ok(JsString::from(content).into())
 }
 
-fn read_dir(_: &JsValue, args: &[JsValue], root: &Chroot, ctx: &mut Context) -> JsResult<JsValue> {
+fn read_dir(
+    _: &JsValue,
+    args: &[JsValue],
+    root: &Bindings,
+    ctx: &mut Context,
+) -> JsResult<JsValue> {
     let path = argument(args, 0, ctx)?;
-    let host = root.readable(&path)?;
-
-    let mut names = fs::read_dir(&host)
-        .map_err(|e| error(format!("Failed to list '{}': {}", path, e)))?
-        .filter_map(|entry| entry.ok())
+    let resolved = root.permit(&path, SandboxFilesystemOperation::Read)?;
+    let names = root
+        .handle
+        .block_on(root.chroot.read_dir(&root.ctx, resolved.as_str()))
+        .map_err(|e| error(format!("Failed to list '{}': {}", path, e.internal_message)))?
+        .into_iter()
         .map(|entry| {
-            let name = entry.file_name().to_string_lossy().to_string();
-            match entry.path().is_dir() {
-                true => name + "/",
-                false => name,
-            }
-        })
-        .collect::<Vec<String>>();
-    names.sort();
+            let name = entry.path.file_name().unwrap_or_default();
+            let suffix = if entry.metadata.is_dir() { "/" } else { "" };
+            JsString::from(format!("{name}{suffix}")).into()
+        });
 
-    Ok(JsArray::from_iter(
-        names.into_iter().map(|name| JsString::from(name).into()),
-        ctx,
-    )
-    .into())
+    Ok(JsArray::from_iter(names, ctx).into())
 }
 
-fn write(args: &[JsValue], root: &Chroot, ctx: &mut Context, append: bool) -> JsResult<JsValue> {
+fn write(
+    args: &[JsValue],
+    root: &Bindings,
+    ctx: &mut Context,
+    mode: file::WriteMode,
+) -> JsResult<JsValue> {
     let path = argument(args, 0, ctx)?;
     let content = argument(args, 1, ctx)?;
-    let host = root.writable(&path)?;
-
-    fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .append(append)
-        .truncate(!append)
-        .open(&host)
-        .and_then(|mut file| file.write_all(content.as_bytes()))
-        .map_err(|e| error(format!("Failed to write '{}': {}", path, e)))?;
+    let resolved = root.permit(&path, SandboxFilesystemOperation::Write)?;
+    root.handle
+        .block_on(
+            root.chroot
+                .write(&root.ctx, resolved.as_str(), content.as_bytes(), mode),
+        )
+        .map_err(|e| {
+            error(format!(
+                "Failed to write '{}': {}",
+                path, e.internal_message
+            ))
+        })?;
 
     Ok(JsValue::undefined())
 }
@@ -151,30 +131,28 @@ fn write(args: &[JsValue], root: &Chroot, ctx: &mut Context, append: bool) -> Js
 fn write_file(
     _: &JsValue,
     args: &[JsValue],
-    root: &Chroot,
+    root: &Bindings,
     ctx: &mut Context,
 ) -> JsResult<JsValue> {
-    write(args, root, ctx, false)
+    write(args, root, ctx, file::WriteMode::Truncate)
 }
 
 fn append_file(
     _: &JsValue,
     args: &[JsValue],
-    root: &Chroot,
+    root: &Bindings,
     ctx: &mut Context,
 ) -> JsResult<JsValue> {
-    write(args, root, ctx, true)
+    write(args, root, ctx, file::WriteMode::Append)
 }
 
 pub(super) fn register_fs(
     ctx: &AppContext,
-    root: &str,
+    chroot: &Chroot,
+    handle: &Handle,
     scopes: Vec<SandboxFilesystemScope>,
     context: &mut Context,
 ) -> JsResult<()> {
-    let canonical = Path::new(root)
-        .canonicalize()
-        .map_err(|e| error(format!("Invalid chroot '{}': {}", root, e)))?;
     let scopes = SandboxScopes {
         fetch: vec![],
         filesystem: scopes,
@@ -190,10 +168,10 @@ pub(super) fn register_fs(
     for (name, function) in functions {
         let function = NativeFunction::from_copy_closure_with_captures(
             function,
-            Chroot {
+            Bindings {
                 ctx: ctx.clone(),
-                root: root.to_string(),
-                canonical: canonical.clone(),
+                chroot: chroot.clone(),
+                handle: handle.clone(),
                 scopes: scopes.clone(),
             },
         )

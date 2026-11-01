@@ -26,7 +26,7 @@ pub(crate) async fn handler(
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
-    let token_query = query.get("token").map(|s| s.as_str());
+    let token_query = query.get("token").map(std::string::String::as_str);
 
     let token = token_bearer.or(token_query).unwrap_or_default();
     if token.is_empty() {

@@ -94,7 +94,7 @@ pub(super) fn validate_list(
     conditions: &[Condition],
 ) -> Result<(), AppError> {
     if conditions.is_empty() {
-        return Err(invalid(ctx, &format!("{} is empty", kind)));
+        return Err(invalid(ctx, &format!("{kind} is empty")));
     }
     conditions
         .iter()
@@ -139,14 +139,14 @@ fn number(ctx: &AppContext, value: &str) -> Result<f64, AppError> {
     value
         .trim()
         .parse()
-        .map_err(|_| condition_invalid(ctx, &format!("'{}' is not a number", value)))
+        .map_err(|_| condition_invalid(ctx, &format!("'{value}' is not a number")))
 }
 
 fn condition_invalid(ctx: &AppContext, message: &str) -> AppError {
     app_error!(
         Validation,
         "flow_condition_invalid",
-        &format!("Condition failed: {}", message),
+        &format!("Condition failed: {message}"),
         ctx.clone()
     )
 }

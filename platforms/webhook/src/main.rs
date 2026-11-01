@@ -28,7 +28,7 @@ async fn get_bind_addr(ctx: &AppContext) -> Result<String, AppError> {
     let port = ctx.configuration().get_int(ctx, "webhooks.port").await?;
     let bind = ctx.configuration().get_string(ctx, "webhooks.bind").await?;
 
-    Ok(format!("{}:{}", bind, port))
+    Ok(format!("{bind}:{port}"))
 }
 
 fn main() {

@@ -4,6 +4,7 @@
 pub mod agent;
 pub mod configuration;
 pub mod context;
+pub mod file_system;
 pub mod flows;
 pub mod inference;
 pub mod logging;

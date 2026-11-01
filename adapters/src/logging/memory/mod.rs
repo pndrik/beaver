@@ -4,7 +4,7 @@
 use serde_json::{Map, Value};
 use std::{
     cell::RefCell,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, PoisonError},
 };
 use tracing::{Event, Level, Span, Subscriber, subscriber::DefaultGuard};
 use tracing_subscriber::{
@@ -48,7 +48,10 @@ impl Memory {
     }
 
     pub fn events(&self) -> Vec<RecordedEvent> {
-        self.events.lock().unwrap().clone()
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     pub fn messages(&self, level: Level) -> Vec<String> {
@@ -92,11 +95,14 @@ where
         let mut fields = Fields::default();
         event.record(&mut fields);
 
-        self.0.lock().unwrap().push(RecordedEvent {
-            level: *event.metadata().level(),
-            message: fields.message,
-            fields: fields.values,
-            ctx: scope_ctx(ctx.event_scope(event)),
-        });
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(RecordedEvent {
+                level: *event.metadata().level(),
+                message: fields.message,
+                fields: fields.values,
+                ctx: scope_ctx(ctx.event_scope(event)),
+            });
     }
 }

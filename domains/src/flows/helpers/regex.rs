@@ -18,7 +18,7 @@ pub(crate) fn regex(ctx: &AppContext, pattern: &str) -> Result<Regex, AppError> 
             app_error!(
                 Validation,
                 "regex_invalid",
-                &format!("invalid regex '{}': {}", pattern, e),
+                &format!("invalid regex '{pattern}': {e}"),
                 ctx.clone()
             )
         })

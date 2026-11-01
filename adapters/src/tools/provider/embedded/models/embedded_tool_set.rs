@@ -61,7 +61,7 @@ impl ToolSet for EmbeddedToolSet {
         Err(app_error!(
             NotFound,
             "tool_not_found",
-            &format!("Tool with name '{}' not found", name),
+            &format!("Tool with name '{name}' not found"),
             ctx.clone()
         ))
     }

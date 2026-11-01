@@ -1,7 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use crate::context::ContextStandard;
+use crate::{context::ContextStandard, file_system::Disk};
 use std::{collections::HashMap, fs, sync::Arc};
 
 use serde_json::json;
@@ -9,7 +9,7 @@ use serde_json::json;
 use super::JavascriptProvider;
 use crate::{configuration::ConfigurationMap, tools::sandbox::Boa};
 use app_domains::{
-    core::models::AppContext,
+    core::models::{AppContext, file::Chroot},
     inference::models::{
         Agent, AgentCacheLevel, AgentInference, Compression, Conversation, Message, Model, Options,
     },
@@ -18,6 +18,11 @@ use app_domains::{
         traits::ToolsProvider,
     },
 };
+
+async fn disk_chroot(ctx: &AppContext, root: &std::path::Path) -> Chroot {
+    let disk = Arc::new(Disk::new(ctx, &root.to_string_lossy()).unwrap());
+    Chroot::new(ctx, disk, "/", false).await.unwrap()
+}
 
 const PACKAGE: &str = r#"{
   "name": "greeter",
@@ -86,13 +91,11 @@ export { main };"#,
     fs::create_dir(chroot.path().join("in")).unwrap();
     fs::write(chroot.path().join("in/name.txt"), "chroot").unwrap();
     let mut conversation = Conversation::new(
-        &ctx,
         Message::system(String::new(), &agent),
         agent,
         vec![],
-        &chroot.path().to_string_lossy(),
-    )
-    .unwrap();
+        disk_chroot(&ctx, chroot.path()).await,
+    );
 
     let result = provider
         .execute(
@@ -139,7 +142,8 @@ async fn example_tools_load() {
             .all(|tool| !tool.scopes.fetch.is_empty())
     );
 
-    let chroot = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let chroot = disk_chroot(&ctx, directory.path()).await;
     for (name, tool) in &provider.tools {
         let run = SandboxRun {
             source: SandboxSource::Function {
@@ -151,15 +155,12 @@ async fn example_tools_load() {
             scopes: SandboxScopes::default(),
             limits: None,
         };
-        let output = Boa::new()
-            .run(&ctx, &chroot.path().to_string_lossy(), run)
-            .await
-            .unwrap();
+        let output = Boa::new().run(&ctx, &chroot, run).await.unwrap();
         // Without arguments `main` fails on its input, but only after loading.
         if let Err(e) = &output.result {
-            assert!(!e.contains("Cannot import"), "{}: {}", name, e);
-            assert!(!e.contains("SyntaxError"), "{}: {}", name, e);
-            assert!(!e.contains("not a function"), "{}: {}", name, e);
+            assert!(!e.contains("Cannot import"), "{name}: {e}");
+            assert!(!e.contains("SyntaxError"), "{name}: {e}");
+            assert!(!e.contains("not a function"), "{name}: {e}");
         }
     }
 }

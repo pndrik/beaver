@@ -82,7 +82,7 @@ pub(super) fn identifier(ctx: &AppContext, kind: &str, name: &str) -> Result<(),
     if !NAME_REGEX.is_match(name) {
         return Err(invalid(
             ctx,
-            &format!("{} name '{}' must match {}", kind, name, NAME_PATTERN),
+            &format!("{kind} name '{name}' must match {NAME_PATTERN}"),
         ));
     }
     Ok(())
@@ -125,7 +125,7 @@ impl Definition {
         let mut problems: Vec<String> = raw
             .keys()
             .filter(|name| !declared.contains_key(*name))
-            .map(|name| format!("argument '{}' is not declared", name))
+            .map(|name| format!("argument '{name}' is not declared"))
             .collect();
 
         let mut typed = Map::new();
@@ -136,12 +136,12 @@ impl Definition {
                         typed.insert(name.clone(), value);
                     }
                     Err(err) if err.translation_key == "flow_arguments_invalid" => {
-                        problems.push(format!("argument '{}': {}", name, err.internal_message))
+                        problems.push(format!("argument '{}': {}", name, err.internal_message));
                     }
                     Err(err) => return Err(err),
                 },
                 None if argument.required => {
-                    problems.push(format!("argument '{}' is required", name))
+                    problems.push(format!("argument '{name}' is required"));
                 }
                 None => {}
             }

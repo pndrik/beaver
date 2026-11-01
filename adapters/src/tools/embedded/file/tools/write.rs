@@ -3,16 +3,11 @@
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::{
-    fs,
-    io::{Read, Seek, SeekFrom, Write as _},
-    path::Path,
-};
 
-use super::super::permissions;
+use super::super::{permissions, read_state::State};
 use app_domains::{
     app_error,
-    core::models::{AppContext, AppError},
+    core::models::{AppContext, AppError, ErrorKind, file},
     inference::models::Conversation,
     tools::{
         models::{Call, Schema, SchemaField, SchemaFieldType, ToolPermission},
@@ -39,7 +34,7 @@ impl Default for Arguments {
             start: None,
             length: None,
             append: false,
-            content: "".to_string(),
+            content: String::new(),
         }
     }
 }
@@ -74,7 +69,7 @@ impl Tool for Write {
             false,
             SchemaField::new(
                 SchemaFieldType::Integer,
-                "Optional, start writing from this line number (1-based). Use the line after the last line to add content at the end of the file.",
+                "Optional, start writing from this line number (1-based). Use the line after the last line to add content at the end of the file. Line edits require a current `file_read` of the file: read it first and again after other changes.",
                 None,
             ),
         );
@@ -123,129 +118,57 @@ impl Tool for Write {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = Path::new(&args.path);
-        let parent = path.parent().ok_or_else(|| {
-            app_error!(
+        let path = permissions::resolve(ctx, conversation, &permissions, &args.path).await?;
+        let chroot = conversation.chroot();
+        let before = match State::new(ctx, chroot, &path, conversation).await {
+            Err(err) if err.kind == ErrorKind::NotFound => None,
+            state => Some(state?),
+        };
+        if args.start.is_some() && before.as_ref().is_some_and(|state| !state.is_current()) {
+            return Err(app_error!(
                 Validation,
-                "tool_failed",
-                &format!("Path '{}' has no parent directory", path.display()),
+                "file_not_read",
+                format!(
+                    "File '{path}' was never or changed since it was last read. Read it before editing lines."
+                ),
                 ctx.clone()
-            )
-        })?;
-        let child = path.file_name().ok_or_else(|| {
-            app_error!(
-                Validation,
-                "tool_failed",
-                &format!("Path '{}' has no file name", path.display()),
-                ctx.clone()
-            )
-        })?;
-        let path_absolute =
-            permissions::absolute_path(ctx, conversation, &permissions, &parent.to_string_lossy())?
-                .join(child);
+            ));
+        }
 
-        write_file(
-            ctx,
-            &path_absolute,
-            args.start,
-            args.length,
-            args.append,
-            &args.content,
-        )?;
+        let (content, mode) = match (args.append, args.start) {
+            (true, _) => (args.content, file::WriteMode::Append),
+            (false, None) => (args.content, file::WriteMode::Truncate),
+            (false, Some(start)) => {
+                let original = match chroot.read_to_string(ctx, path.as_str()).await {
+                    Err(err) if err.kind == ErrorKind::NotFound => String::new(),
+                    original => original?,
+                };
+                let replaced = replace_lines(&original, start, args.length, &args.content)
+                    .map_err(|message| {
+                        app_error!(Validation, "skill_failed", &message, ctx.clone())
+                    })?;
+                (replaced, file::WriteMode::Truncate)
+            }
+        };
 
-        Ok(format!("Successfully wrote to file '{}'", path.display()))
+        chroot
+            .write(ctx, path.as_str(), content.as_bytes(), mode)
+            .await?;
+
+        // After an append the whole content is only known if it was before.
+        if !args.append || before.as_ref().is_some_and(State::is_current) {
+            State::new(ctx, chroot, &path, conversation)
+                .await?
+                .mark_read(conversation);
+        }
+
+        Ok(format!("Successfully wrote to file '{}'", args.path))
     }
-}
-
-fn open_file_for_writing(
-    ctx: &AppContext,
-    path: &Path,
-    start: Option<u64>,
-    append: bool,
-) -> Result<fs::File, AppError> {
-    if path.is_dir() {
-        return Err(app_error!(
-            Validation,
-            "skill_failed",
-            &format!(
-                "Path '{}' is a directory can not write to it",
-                path.display()
-            ),
-            ctx.clone()
-        ));
-    }
-
-    let mut open_options = fs::OpenOptions::new();
-    open_options.create(true);
-    if append {
-        open_options.append(true);
-    } else {
-        open_options
-            .read(true)
-            .write(true)
-            .truncate(start.is_none());
-    }
-
-    open_options.open(path).map_err(|e| {
-        app_error!(
-            ServiceUnavailable,
-            "skill_failed",
-            &format!("Failed to open file '{}': {}", path.display(), e),
-            ctx.clone()
-        )
-    })
-}
-
-fn replace_lines_in_file(
-    ctx: &AppContext,
-    file: &mut fs::File,
-    start: u64,
-    length: Option<u64>,
-    content: &str,
-) -> Result<(), AppError> {
-    let mut original = String::new();
-    file.read_to_string(&mut original).map_err(|e| {
-        app_error!(
-            ServiceUnavailable,
-            "skill_failed",
-            &format!("Failed to read file for line replacement: {}", e),
-            ctx.clone()
-        )
-    })?;
-    let new_content = replace_lines(&original, start, length, content)
-        .map_err(|message| app_error!(Validation, "skill_failed", &message, ctx.clone()))?;
-
-    file.seek(SeekFrom::Start(0)).map_err(|e| {
-        app_error!(
-            ServiceUnavailable,
-            "skill_failed",
-            &format!("Failed to seek in file for line replacement: {}", e),
-            ctx.clone()
-        )
-    })?;
-    file.set_len(0).map_err(|e| {
-        app_error!(
-            ServiceUnavailable,
-            "skill_failed",
-            &format!("Failed to truncate file for line replacement: {}", e),
-            ctx.clone()
-        )
-    })?;
-    file.write_all(new_content.as_bytes()).map_err(|e| {
-        app_error!(
-            ServiceUnavailable,
-            "skill_failed",
-            &format!("Failed to write to file for line replacement: {}", e),
-            ctx.clone()
-        )
-    })?;
-
-    Ok(())
 }
 
 fn replace_lines(
@@ -260,7 +183,7 @@ fn replace_lines(
     if start == 0 {
         return Err("Start line number must be greater than 0".to_string());
     }
-    let start_index = (start - 1) as usize;
+    let start_index = usize::try_from(start - 1).unwrap_or(usize::MAX);
     if start_index > line_count {
         return Err(format!(
             "Start line {} is beyond the end of the file ({} lines). Use a start line between 1 and {} or set append to true.",
@@ -270,7 +193,7 @@ fn replace_lines(
         ));
     }
     let end_index = start_index
-        .saturating_add(length.unwrap_or(0) as usize)
+        .saturating_add(usize::try_from(length.unwrap_or(0)).unwrap_or(usize::MAX))
         .min(line_count);
 
     let new_lines: Vec<&str> = original_lines[..start_index]
@@ -297,61 +220,6 @@ fn replace_lines(
     }
 
     Ok(new_content)
-}
-
-fn write_file(
-    ctx: &AppContext,
-    path: &Path,
-    start: Option<u64>,
-    length: Option<u64>,
-    append: bool,
-    content: &str,
-) -> Result<(), AppError> {
-    let mut file = open_file_for_writing(ctx, path, start, append)?;
-
-    if append {
-        return file.write_all(content.as_bytes()).map_err(|e| {
-            app_error!(
-                ServiceUnavailable,
-                "skill_failed",
-                &format!("Failed to write to file '{}': {}", path.display(), e),
-                ctx.clone()
-            )
-        });
-    }
-
-    if let Some(start) = start {
-        if start == 0 {
-            return Err(app_error!(
-                Validation,
-                "skill_failed",
-                "Start line number must be greater than 0",
-                ctx.clone()
-            ));
-        }
-
-        return replace_lines_in_file(ctx, &mut file, start, length, content);
-    }
-
-    // If no start is provided, overwrite the entire file
-    file.set_len(0).map_err(|e| {
-        app_error!(
-            ServiceUnavailable,
-            "skill_failed",
-            &format!("Failed to truncate file '{}': {}", path.display(), e),
-            ctx.clone()
-        )
-    })?;
-    file.write_all(content.as_bytes()).map_err(|e| {
-        app_error!(
-            ServiceUnavailable,
-            "skill_failed",
-            &format!("Failed to write to file '{}': {}", path.display(), e),
-            ctx.clone()
-        )
-    })?;
-
-    Ok(())
 }
 
 #[cfg(test)]

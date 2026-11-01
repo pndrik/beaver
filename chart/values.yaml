@@ -9,8 +9,10 @@ image:
 env:
   CONFIGURATION__PATH: /configuration.yaml
 configuration:
-  context:
-    chroot: "/sandbox"
+  file_system:
+    provider: "disk"
+    disk:
+      root: "/sandbox"
   agents:
     provider: "file"
     path: "/agents"

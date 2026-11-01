@@ -12,6 +12,22 @@ members = [
 version = "0.1.0"
 edition = "2024"
 
+[workspace.lints.rust]
+future_incompatible = { level = "warn", priority = 1 }
+nonstandard_style = { level = "deny", priority = 2 }
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = 12 }
+redundant_clone = { level = "deny", priority = 11 }
+similar_names = { level = "allow", priority = 10 }
+unnecessary_wraps = { level = "allow", priority = 9 }
+wildcard_imports = { level = "allow", priority = 8 }
+missing_errors_doc = { level = "allow", priority = 7 }
+must_use_candidate = { level = "allow", priority = 6 }
+unused_async = { level = "allow", priority = 5 }
+manual_while_let_some = { level = "deny", priority = 4 }
+pedantic = { level = "warn", priority = 3 }
+
 [workspace.dependencies]
 app = { path = "app" }
 app-domains = { path = "domains" }

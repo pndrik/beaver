@@ -3,14 +3,13 @@
 
 use async_trait::async_trait;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
-use std::os::unix::fs::FileTypeExt;
-use walkdir::WalkDir;
+use serde::Deserialize;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::super::permissions;
 use app_domains::{
     app_error,
-    core::models::{AppContext, AppError},
+    core::models::{AppContext, AppError, file},
     inference::models::Conversation,
     tools::{
         models::{Call, Schema, SchemaField, SchemaFieldType, ToolPermission},
@@ -20,7 +19,6 @@ use app_domains::{
 
 const NAME: &str = "file_find";
 const DESCRIPTION: &str = "Finds files and directories in a directory hierarchy.";
-const MAX_DEPTH: usize = 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -31,25 +29,12 @@ enum SortBy {
     Modified,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum FileType {
-    File,
-    Directory,
-    Symlink,
-    Device,
-    Fifo,
-    Socket,
-
-    Unknown,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 struct Arguments {
     pub path: String,
     pub pattern: Option<String>,
-    pub file_type: Option<FileType>,
+    pub file_type: Option<file::Kind>,
     pub sort_by: SortBy,
     pub descending: bool,
     pub recursive: bool,
@@ -71,11 +56,11 @@ impl Default for Arguments {
     }
 }
 
-struct FileEntry {
+struct Found {
     pub path: String,
     pub size: u64,
     pub modified: u64,
-    pub file_type: FileType,
+    pub file_type: file::Kind,
 }
 
 pub struct Find;
@@ -118,8 +103,13 @@ impl Tool for Find {
             false,
             SchemaField::new(
                 SchemaFieldType::String,
-                "Optional, only list files or directories, defaults to both.",
-                Some(vec!["file".to_string(), "directory".to_string()]),
+                "Optional, only list entries of this type, defaults to all. Symlinks are not followed, `other` covers devices, fifos and sockets.",
+                Some(vec![
+                    "file".to_string(),
+                    "directory".to_string(),
+                    "symlink".to_string(),
+                    "other".to_string(),
+                ]),
             ),
         );
 
@@ -192,63 +182,68 @@ impl Tool for Find {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = permissions::absolute_path(ctx, conversation, &permissions, &args.path)?;
+        let path = permissions::resolve(ctx, conversation, &permissions, &args.path).await?;
         let pattern = match args.pattern {
             Some(ref p) => Some(Regex::new(p).map_err(|e| {
                 app_error!(
                     Validation,
                     "tool_failed",
-                    &format!("Invalid regex pattern '{}': {}", p, e),
+                    &format!("Invalid regex pattern '{p}': {e}"),
                     ctx.clone()
                 )
             })?),
             None => None,
         };
-        let depth = if args.recursive { MAX_DEPTH } else { 1 };
-        let mut entries = walk_directory(
-            ctx,
-            &path.to_string_lossy(),
-            pattern,
-            args.file_type,
-            depth,
-            &args.exclude,
-        )
-        .await?;
+
+        let path_order = args.sort_by == SortBy::Name && !args.descending;
+        let depth = if args.recursive {
+            0..=usize::MAX
+        } else {
+            0..=1
+        };
+        let max_results = usize::try_from(args.max_results).unwrap_or(usize::MAX);
+        let mut entries: Vec<Found> = conversation
+            .chroot()
+            .find(
+                ctx,
+                path.as_str(),
+                pattern.as_ref(),
+                args.file_type.as_slice(),
+                depth,
+                &args.exclude,
+                path_order.then_some(max_results),
+            )
+            .await?
+            .iter()
+            .map(Found::new)
+            .collect();
 
         if entries.is_empty() {
             return Ok("No files or directories found.".to_string());
         }
 
-        if args.sort_by == SortBy::Name {
-            entries.sort_by(|a, b| a.path.cmp(&b.path));
-        } else if args.sort_by == SortBy::Size {
-            entries.sort_by(|a, b| a.size.cmp(&b.size));
+        if args.sort_by == SortBy::Size {
+            entries.sort_by_key(|a| a.size);
         } else if args.sort_by == SortBy::Modified {
-            entries.sort_by(|a, b| a.modified.cmp(&b.modified));
+            entries.sort_by_key(|a| a.modified);
         }
 
         if args.descending {
             entries.reverse();
         }
 
-        let limited_entries = entries.into_iter().take(args.max_results as usize);
-
-        let result: Vec<String> = limited_entries
+        let result: Vec<String> = entries
+            .into_iter()
+            .take(max_results)
             .map(|entry| {
                 format!(
                     "{} {} {} {:?}",
-                    entry
-                        .path
-                        .strip_prefix(conversation.chroot())
-                        .unwrap_or("/"),
-                    entry.size,
-                    entry.modified,
-                    entry.file_type
+                    entry.path, entry.size, entry.modified, entry.file_type
                 )
             })
             .collect();
@@ -257,160 +252,16 @@ impl Tool for Find {
     }
 }
 
-fn is_excluded(entry: &walkdir::DirEntry, exclude: &[String]) -> bool {
-    let name = entry.file_name().to_string_lossy();
-    exclude.iter().any(|excluded| excluded == name.as_ref())
-}
-
-async fn walk_directory(
-    ctx: &AppContext,
-    path: &str,
-    pattern: Option<Regex>,
-    file_type: Option<FileType>,
-    depth: usize,
-    exclude: &[String],
-) -> Result<Vec<FileEntry>, AppError> {
-    let mut entries = Vec::new();
-
-    for entry in WalkDir::new(path)
-        .max_depth(depth)
-        .into_iter()
-        .filter_entry(|e| !is_excluded(e, exclude))
-    {
-        let Ok(entry) = entry else {
-            continue;
-        };
-
-        if let Some(file_type) = file_type {
-            match file_type {
-                FileType::File => {
-                    if !entry.file_type().is_file() {
-                        continue;
-                    }
-                }
-                FileType::Directory => {
-                    if !entry.file_type().is_dir() {
-                        continue;
-                    }
-                }
-                FileType::Symlink => {
-                    if !entry.file_type().is_symlink() {
-                        continue;
-                    }
-                }
-                FileType::Device => {
-                    if !entry.file_type().is_block_device() && !entry.file_type().is_char_device() {
-                        continue;
-                    }
-                }
-                FileType::Fifo => {
-                    if !entry.file_type().is_fifo() {
-                        continue;
-                    }
-                }
-                FileType::Socket => {
-                    if !entry.file_type().is_socket() {
-                        continue;
-                    }
-                }
-                _ => {
-                    return Err(app_error!(
-                        Validation,
-                        "tool_failed",
-                        &format!("Unsupported file type filter: {:?}", file_type),
-                        ctx.clone()
-                    ));
-                }
-            }
+impl Found {
+    fn new(entry: &file::Entry) -> Self {
+        Self {
+            path: entry.path.to_string(),
+            size: entry.metadata.size,
+            modified: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs())
+                .saturating_sub(entry.metadata.modified),
+            file_type: entry.metadata.kind,
         }
-
-        if let Some(pattern) = &pattern {
-            if !pattern.is_match(&entry.file_name().to_string_lossy()) {
-                continue;
-            }
-        }
-
-        let file_entry = entry_to_file_entry(ctx, &entry).await?;
-        entries.push(file_entry);
     }
-
-    Ok(entries)
-}
-
-async fn entry_to_file_entry(
-    ctx: &AppContext,
-    entry: &walkdir::DirEntry,
-) -> Result<FileEntry, AppError> {
-    let metadata = entry.metadata().map_err(|e| {
-        app_error!(
-            Internal,
-            "tool_failed",
-            &format!(
-                "Failed to get metadata for entry '{}': {}",
-                entry.path().display(),
-                e
-            ),
-            ctx.clone()
-        )
-    })?;
-
-    let modified = metadata
-        .modified()
-        .map_err(|e| {
-            app_error!(
-                Internal,
-                "tool_failed",
-                &format!(
-                    "Failed to get modified time for entry '{}': {}",
-                    entry.path().display(),
-                    e
-                ),
-                ctx.clone()
-            )
-        })?
-        .elapsed()
-        .map_err(|e| {
-            app_error!(
-                Internal,
-                "tool_failed",
-                &format!(
-                    "Failed to get elapsed time for entry '{}': {}",
-                    entry.path().display(),
-                    e
-                ),
-                ctx.clone()
-            )
-        })?
-        .as_secs();
-
-    let file_type = if entry.file_type().is_file() {
-        FileType::File
-    } else if entry.file_type().is_dir() {
-        FileType::Directory
-    } else if entry.file_type().is_symlink() {
-        FileType::Symlink
-    } else if entry.file_type().is_block_device() || entry.file_type().is_char_device() {
-        FileType::Device
-    } else if entry.file_type().is_fifo() {
-        FileType::Fifo
-    } else if entry.file_type().is_socket() {
-        FileType::Socket
-    } else {
-        return Err(app_error!(
-            Validation,
-            "tool_failed",
-            &format!(
-                "Unsupported file type for entry '{}'",
-                entry.path().display()
-            ),
-            ctx.clone()
-        ));
-    };
-
-    Ok(FileEntry {
-        path: entry.path().to_string_lossy().to_string(),
-        size: metadata.len(),
-        modified,
-        file_type,
-    })
 }

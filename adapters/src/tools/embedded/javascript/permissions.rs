@@ -24,7 +24,7 @@ pub(super) fn web_patterns(
                 app_error!(
                     Validation,
                     "tool_failed",
-                    &format!("Invalid web scope '{}': {}", pattern, e),
+                    &format!("Invalid web scope '{pattern}': {e}"),
                     ctx.clone()
                 )
             })

@@ -25,7 +25,7 @@ impl ArgumentsSet {
             identifier(ctx, "variable", name)?;
             variable
                 .validate(ctx)
-                .map_err(|err| within(&format!("variable '{}'", name), err))?;
+                .map_err(|err| within(&format!("variable '{name}'"), err))?;
         }
         Ok(())
     }
@@ -66,13 +66,13 @@ impl SetVariable {
         let text = match &self.extract {
             Some(extract) => {
                 let regex = regex(ctx, extract)?;
-                let captures = regex.captures(rendered).ok_or_else(|| {
-                    rejected(format!("'{}' does not match '{}'", rendered, extract))
-                })?;
-                let group = if regex.captures_len() > 1 { 1 } else { 0 };
+                let captures = regex
+                    .captures(rendered)
+                    .ok_or_else(|| rejected(format!("'{rendered}' does not match '{extract}'")))?;
+                let group = usize::from(regex.captures_len() > 1);
                 captures
                     .get(group)
-                    .ok_or_else(|| rejected(format!("group 1 of '{}' did not match", extract)))?
+                    .ok_or_else(|| rejected(format!("group 1 of '{extract}' did not match")))?
                     .as_str()
             }
             None => rendered,

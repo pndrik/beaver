@@ -1,11 +1,11 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use crate::context::ContextStandard;
+use crate::{context::ContextStandard, file_system};
 use std::sync::Arc;
 
 use app_domains::{
-    core::models::AppContext,
+    core::models::{AppContext, file::Chroot},
     inference::models::{
         Agent, AgentCacheLevel, AgentInference, Compression, Conversation, Message, Model, Options,
         ReasoningEffort,
@@ -23,15 +23,14 @@ fn context() -> AppContext {
     )))
 }
 
-fn max_tokens(model: Model, max_tokens: u64, reasoning_effort: ReasoningEffort) -> Option<u32> {
+fn max_tokens(model: &Model, max_tokens: u64, reasoning_effort: ReasoningEffort) -> Option<u32> {
     let ctx = context();
     let options = Options {
         max_tokens,
         reasoning_effort,
         ..Options::default()
     };
-    GenAi::new(&ctx, "endpoint", "apikey")
-        .get_options(&ctx, &model, &options)
+    GenAi::get_options(&ctx, model, &options)
         .unwrap()
         .max_tokens
 }
@@ -39,11 +38,11 @@ fn max_tokens(model: Model, max_tokens: u64, reasoning_effort: ReasoningEffort) 
 #[test]
 fn max_tokens_stay_above_the_thinking_budget() {
     assert_eq!(
-        max_tokens(Model::ClaudeHaiku4_5, 4096, ReasoningEffort::Medium),
+        max_tokens(&Model::ClaudeHaiku4_5, 4096, ReasoningEffort::Medium),
         Some(12096)
     );
     assert_eq!(
-        max_tokens(Model::ClaudeHaiku4_5, 4096, ReasoningEffort::High),
+        max_tokens(&Model::ClaudeHaiku4_5, 4096, ReasoningEffort::High),
         Some(28096)
     );
 }
@@ -51,11 +50,11 @@ fn max_tokens_stay_above_the_thinking_budget() {
 #[test]
 fn max_tokens_above_the_thinking_budget_are_kept() {
     assert_eq!(
-        max_tokens(Model::ClaudeHaiku4_5, 4096, ReasoningEffort::Low),
+        max_tokens(&Model::ClaudeHaiku4_5, 4096, ReasoningEffort::Low),
         Some(4096)
     );
     assert_eq!(
-        max_tokens(Model::ClaudeHaiku4_5, 10000, ReasoningEffort::Medium),
+        max_tokens(&Model::ClaudeHaiku4_5, 10000, ReasoningEffort::Medium),
         Some(10000)
     );
 }
@@ -63,21 +62,21 @@ fn max_tokens_above_the_thinking_budget_are_kept() {
 #[test]
 fn models_without_thinking_budget_keep_max_tokens() {
     assert_eq!(
-        max_tokens(Model::ClaudeOpus4_8, 4096, ReasoningEffort::High),
+        max_tokens(&Model::ClaudeOpus4_8, 4096, ReasoningEffort::High),
         Some(4096)
     );
     assert_eq!(
-        max_tokens(Model::ClaudeOpus4_5, 4096, ReasoningEffort::High),
+        max_tokens(&Model::ClaudeOpus4_5, 4096, ReasoningEffort::High),
         Some(4096)
     );
     assert_eq!(
-        max_tokens(Model::GPT5_5, 4096, ReasoningEffort::High),
+        max_tokens(&Model::GPT5_5, 4096, ReasoningEffort::High),
         Some(4096)
     );
 }
 
-#[test]
-fn the_system_prompt_is_sent_after_a_summary() {
+#[tokio::test]
+async fn the_system_prompt_is_sent_after_a_summary() {
     let ctx = context();
     let agent = Agent::new(
         "coder".to_string(),
@@ -92,15 +91,9 @@ fn the_system_prompt_is_sent_after_a_summary() {
         },
     );
     let system_prompt = Message::system("You are a coder.".to_string(), &agent);
-    let chroot = std::env::temp_dir();
-    let mut conversation = Conversation::new(
-        &ctx,
-        system_prompt,
-        agent,
-        vec![],
-        &chroot.to_string_lossy(),
-    )
-    .unwrap();
+    let memory = Arc::new(file_system::Memory::new());
+    let chroot = Chroot::new(&ctx, memory, "/", false).await.unwrap();
+    let mut conversation = Conversation::new(system_prompt, agent, vec![], chroot);
     for content in ["one", "two"] {
         let message = Message::user(content.to_string(), conversation.agent());
         conversation.insert_message(message, None);
@@ -108,7 +101,7 @@ fn the_system_prompt_is_sent_after_a_summary() {
     let summary = Message::summary("the user said one".to_string(), conversation.agent());
     conversation.insert_message(summary, Some(-2));
 
-    let request = GenAi::new(&ctx, "endpoint", "apikey").get_chat_request(&conversation);
+    let request = GenAi::get_chat_request(&conversation);
     let texts: Vec<_> = request
         .messages
         .iter()

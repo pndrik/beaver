@@ -4,11 +4,9 @@
 use app_adapters::context::ContextStandard;
 use std::{collections::HashMap, sync::Arc};
 
-use app_adapters::{
-    agent, configuration::ConfigurationMap, inference::Scripted, tools::output_writer,
-};
+use app_adapters::{agent, configuration::ConfigurationMap, file_system, inference::Scripted};
 use app_domains::{
-    core::models::AppContext,
+    core::models::{AppContext, file::Chroot},
     inference::{
         Inference,
         models::{
@@ -45,12 +43,11 @@ struct Fixture {
     inference: Inference,
     tools: Tools,
     conversation: Conversation,
-    _chroot: tempfile::TempDir,
 }
 
 /// A conversation with `parent`, which may invoke the subagent `helper`.
+/// It works in the chroot `/work`.
 async fn fixture() -> Fixture {
-    let chroot = tempfile::tempdir().unwrap();
     let ctx = AppContext::new(Arc::new(ContextStandard::new(
         "test".to_string(),
         Arc::new(ConfigurationMap::default()),
@@ -68,9 +65,11 @@ async fn fixture() -> Fixture {
         vec![scripted.clone()],
     )
     .unwrap();
-    let tools = Tools::new(vec![], Arc::new(output_writer::Memory::new())).unwrap();
+    let tools = Tools::new(vec![]).unwrap();
+    let memory = Arc::new(file_system::Memory::new());
+    let chroot = Chroot::new(&ctx, memory, "/work", true).await.unwrap();
     let conversation = inference
-        .new_conversation(&ctx, "parent", &tools, &chroot.path().to_string_lossy())
+        .new_conversation(&ctx, "parent", &tools, chroot)
         .await
         .unwrap();
 
@@ -80,7 +79,6 @@ async fn fixture() -> Fixture {
         inference,
         tools,
         conversation,
-        _chroot: chroot,
     }
 }
 
@@ -102,7 +100,6 @@ async fn subagent_runs_in_the_chroot_of_its_parent() {
         inference,
         tools,
         mut conversation,
-        _chroot,
     } = fixture().await;
     tools
         .call(&ctx, &mut conversation, &inference, &invoke("hi"))
@@ -112,8 +109,9 @@ async fn subagent_runs_in_the_chroot_of_its_parent() {
     let calls = scripted.calls();
     let helper = calls.iter().find(|c| c.agent == "helper").unwrap();
     assert_eq!(helper.prompt, "hi");
-    assert_eq!(helper.chroot, conversation.chroot());
-    assert!(calls.iter().all(|c| c.chroot == conversation.chroot()));
+    assert_eq!(conversation.chroot().root().as_str(), "/work");
+    assert_eq!(helper.chroot, "/work");
+    assert!(calls.iter().all(|c| c.chroot == "/work"));
 }
 
 #[tokio::test]
@@ -123,7 +121,6 @@ async fn subagent_messages_carry_usage() {
         inference,
         tools,
         mut conversation,
-        _chroot,
         ..
     } = fixture().await;
     conversation.insert_message(

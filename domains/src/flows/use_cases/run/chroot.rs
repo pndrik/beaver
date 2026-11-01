@@ -1,136 +1,68 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::{
-    fs,
-    path::{Component, Path, PathBuf},
-};
+use std::sync::Arc;
 use tracing::warn;
 
 use crate::{
     app_error,
-    core::models::{AppContext, AppError},
+    core::{
+        models::{
+            AppContext, AppError, ErrorKind,
+            file::{self, Chroot},
+        },
+        traits::FileSystem,
+    },
 };
 
-fn invalid(ctx: &AppContext, message: String) -> AppError {
-    app_error!(Validation, "access_violation", &message, ctx.clone())
-}
+type Fs = Arc<dyn FileSystem + Send + Sync>;
 
-/// Resolves `.` and `..` without touching the file system.
-fn normalize(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other),
-        }
-    }
-    normalized
-}
-
-/// Canonicalizes the longest existing ancestor of `path` (following symlinks)
-/// and appends the components that don't exist yet.
-fn resolve_existing_prefix(path: &Path) -> std::io::Result<PathBuf> {
-    let mut existing = path.to_path_buf();
-    let mut missing = Vec::new();
-    while !existing.exists() {
-        match (existing.file_name(), existing.parent()) {
-            (Some(name), Some(parent)) => {
-                missing.push(name.to_os_string());
-                existing = parent.to_path_buf();
-            }
-            _ => break,
-        }
-    }
-
-    let mut resolved = existing.canonicalize()?;
-    for name in missing.into_iter().rev() {
-        resolved.push(name);
-    }
-    Ok(resolved)
-}
-
-pub(super) async fn global_chroot(ctx: &AppContext) -> Result<PathBuf, AppError> {
-    let chroot = ctx
-        .configuration()
-        .get_string(ctx, "context.chroot")
-        .await?;
-    Path::new(&chroot)
-        .canonicalize()
-        .map_err(|e| invalid(ctx, format!("Invalid global chroot '{}': {}", chroot, e)))
+pub(super) async fn global(ctx: &AppContext, fs: &Fs) -> Result<Chroot, AppError> {
+    Chroot::new(ctx, Arc::clone(fs), "/", false).await
 }
 
 pub(super) async fn prepare(
     ctx: &AppContext,
+    fs: &Fs,
     path: &str,
     create: bool,
     delete: bool,
-) -> Result<PathBuf, AppError> {
-    let global = global_chroot(ctx).await?;
-    let requested = Path::new(path);
-    let joined = if requested.is_absolute() {
-        requested.to_path_buf()
+) -> Result<Chroot, AppError> {
+    let path = if path.starts_with('/') {
+        path.to_string()
     } else {
-        global.join(requested)
+        format!("/{path}")
     };
+    let chroot = Chroot::new(ctx, Arc::clone(fs), &path, create).await?;
 
-    let outside = || {
-        invalid(
-            ctx,
-            format!("Chroot '{}' is outside of the global chroot", path),
-        )
-    };
-    let resolved = resolve_existing_prefix(&normalize(&joined))
-        .map_err(|e| invalid(ctx, format!("Invalid chroot '{}': {}", path, e)))?;
-    if !resolved.starts_with(&global) {
-        return Err(outside());
-    }
-
-    if !resolved.exists() {
-        if !create {
-            return Err(invalid(ctx, format!("Chroot '{}' does not exist", path)));
-        }
-        fs::create_dir_all(&resolved)
-            .map_err(|e| invalid(ctx, format!("Failed to create chroot '{}': {}", path, e)))?;
-    }
-
-    let canonical = resolved
-        .canonicalize()
-        .map_err(|e| invalid(ctx, format!("Invalid chroot '{}': {}", path, e)))?;
-    if !canonical.starts_with(&global) {
-        return Err(outside());
-    }
-    if !canonical.is_dir() {
-        return Err(invalid(
-            ctx,
-            format!("Chroot '{}' is not a directory", path),
-        ));
-    }
-    if delete && canonical == global {
-        return Err(invalid(
-            ctx,
-            format!(
-                "Chroot '{}' is the global chroot and can't be deleted",
-                path
-            ),
+    if delete && chroot.root().is_root() {
+        return Err(app_error!(
+            Validation,
+            "access_violation",
+            &format!("Chroot '{path}' is the global chroot and can't be deleted"),
+            ctx.clone()
         ));
     }
 
-    Ok(canonical)
+    Ok(chroot)
 }
 
-pub(super) async fn cleanup(ctx: &AppContext, chroot: &Path) {
-    let is_global = global_chroot(ctx)
-        .await
-        .map_or(true, |global| global == chroot);
-    if is_global || !chroot.exists() {
+pub(super) async fn cleanup(ctx: &AppContext, fs: &Fs, chroot: &file::Path) {
+    if chroot.is_root() {
         return;
     }
 
-    if let Err(e) = fs::remove_dir_all(chroot) {
-        warn!(chroot = %chroot.display(), error = %e, "Failed to delete chroot");
+    let deleted = async {
+        global(ctx, fs)
+            .await?
+            .unlink(ctx, chroot.as_str(), true)
+            .await
+    };
+    match deleted.await {
+        Ok(()) => {}
+        Err(err) if err.kind == ErrorKind::NotFound => {}
+        Err(err) => {
+            warn!(chroot = %chroot, error = %err.internal_message, "Failed to delete chroot");
+        }
     }
 }

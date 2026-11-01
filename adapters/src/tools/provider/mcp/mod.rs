@@ -52,8 +52,7 @@ impl McpProvider {
                     Validation,
                     "configuration_load_failed",
                     &format!(
-                        "MCP servers configuration is not an array: {}",
-                        MCP_SERVERS_CONFIGURATION_KEY
+                        "MCP servers configuration is not an array: {MCP_SERVERS_CONFIGURATION_KEY}"
                     ),
                     ctx.clone()
                 )
@@ -64,10 +63,7 @@ impl McpProvider {
                     app_error!(
                         Validation,
                         "configuration_load_failed",
-                        &format!(
-                            "Failed to deserialize MCP server configuration: {}",
-                            e.to_string()
-                        ),
+                        &format!("Failed to deserialize MCP server configuration: {e}"),
                         ctx.clone()
                     )
                 })
@@ -132,7 +128,7 @@ impl ToolsProvider for McpProvider {
             app_error!(
                 NotFound,
                 "tool_not_found",
-                &format!("Tool with name '{}' not found", name),
+                &format!("Tool with name '{name}' not found"),
                 ctx.clone()
             )
         })?;
@@ -155,7 +151,7 @@ impl ToolsProvider for McpProvider {
             app_error!(
                 NotFound,
                 "tool_not_found",
-                &format!("Tool with name '{}' not found", &input.name),
+                &format!("Tool with name '{}' not found", input.name),
                 ctx.clone()
             )
         })?;
@@ -166,7 +162,7 @@ impl ToolsProvider for McpProvider {
                 "server_not_found",
                 &format!(
                     "MCP server with name '{}' not found for tool '{}'",
-                    tool.server, &input.name
+                    tool.server, input.name
                 ),
                 ctx.clone()
             ));

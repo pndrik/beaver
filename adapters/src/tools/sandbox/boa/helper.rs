@@ -27,7 +27,7 @@ impl Engine {
             app_error!(
                 Internal,
                 "tool_failed",
-                &format!("Failed to {}: {}", what, e),
+                &format!("Failed to {what}: {e}"),
                 ctx.clone()
             )
         };
@@ -63,15 +63,21 @@ impl Engine {
         }
 
         if !scopes.filesystem.is_empty() {
-            register_fs(ctx, &self.chroot, scopes.filesystem.clone(), &mut context)
-                .map_err(|e| failed("register fs", e))?;
+            register_fs(
+                ctx,
+                &self.chroot,
+                &self.handle,
+                scopes.filesystem.clone(),
+                &mut context,
+            )
+            .map_err(|e| failed("register fs", e))?;
         }
 
         Ok(context)
     }
 }
 
-pub(super) fn describe(context: &mut Context, error: JsError) -> String {
+pub(super) fn describe(context: &mut Context, error: &JsError) -> String {
     match error.try_native(context) {
         Ok(native) => native.to_string(),
         Err(_) => error.to_string(),
@@ -79,14 +85,14 @@ pub(super) fn describe(context: &mut Context, error: JsError) -> String {
 }
 
 fn settle(context: &mut Context, value: JsValue) -> Result<JsValue, String> {
-    context.run_jobs().map_err(|e| describe(context, e))?;
+    context.run_jobs().map_err(|e| describe(context, &e))?;
 
     let Some(promise) = value.as_promise() else {
         return Ok(value);
     };
     match promise.state() {
         PromiseState::Fulfilled(value) => Ok(value),
-        PromiseState::Rejected(e) => Err(describe(context, JsError::from_opaque(e))),
+        PromiseState::Rejected(e) => Err(describe(context, &JsError::from_opaque(e))),
         PromiseState::Pending => Err("Promise is still pending".to_string()),
     }
 }
@@ -99,7 +105,7 @@ fn evaluate(
 ) -> Result<Module, String> {
     let module = loader
         .load(path, context)
-        .map_err(|e| describe(context, e))?;
+        .map_err(|e| describe(context, &e))?;
     let promise = module.load_link_evaluate(context);
     settle(context, promise.into())?;
     Ok(module)
@@ -109,7 +115,7 @@ fn export(context: &mut Context, module: &Module, name: &str) -> Result<JsValue,
     module
         .namespace(context)
         .get(js_string!(name), context)
-        .map_err(|e| describe(context, e))
+        .map_err(|e| describe(context, &e))
 }
 
 fn call(
@@ -122,15 +128,15 @@ fn call(
     };
     let value = function
         .call(&JsValue::undefined(), arguments, context)
-        .map_err(|e| describe(context, e))?;
+        .map_err(|e| describe(context, &e))?;
     settle(context, value)
 }
 
 pub(super) fn run_inline(context: &mut Context, code: &str) -> Result<JsValue, String> {
-    let wrapped = format!("(async () => {{\n{}\n}})()", code);
+    let wrapped = format!("(async () => {{\n{code}\n}})()");
     let promise = context
         .eval(Source::from_bytes(wrapped.as_bytes()))
-        .map_err(|e| describe(context, e))?;
+        .map_err(|e| describe(context, &e))?;
     settle(context, promise)
 }
 
@@ -142,9 +148,10 @@ pub(super) fn run_default_export(
 ) -> Result<JsValue, String> {
     let module = evaluate(context, loader, path)?;
     let default = export(context, &module, "default")?;
-    match default.is_callable() {
-        true => call(context, &default, &[]),
-        false => settle(context, default),
+    if default.is_callable() {
+        call(context, &default, &[])
+    } else {
+        settle(context, default)
     }
 }
 
@@ -158,14 +165,14 @@ pub(super) fn run_function(
     let module = evaluate(context, loader, path)?;
     let function = export(context, &module, name)?;
     if !function.is_callable() {
-        return Err(format!("TypeError: export '{}' is not a function", name));
+        return Err(format!("TypeError: export '{name}' is not a function"));
     }
 
     let arguments = arguments
         .iter()
         .map(|argument| JsValue::from_json(argument, context))
         .collect::<JsResult<Vec<JsValue>>>()
-        .map_err(|e| describe(context, e))?;
+        .map_err(|e| describe(context, &e))?;
     call(context, &function, &arguments)
 }
 
@@ -180,22 +187,22 @@ pub(super) fn to_json(
     let json = context
         .global_object()
         .get(js_string!("JSON"), context)
-        .map_err(|e| describe(context, e))?;
+        .map_err(|e| describe(context, &e))?;
     let stringify = json
         .as_object()
         .map(|json| json.get(js_string!("stringify"), context))
         .transpose()
-        .map_err(|e| describe(context, e))?
+        .map_err(|e| describe(context, &e))?
         .and_then(|stringify| stringify.as_callable())
         .ok_or_else(|| "JSON.stringify is not available".to_string())?;
     let serialized = stringify
         .call(&json, std::slice::from_ref(value), context)
-        .map_err(|e| describe(context, e))?;
+        .map_err(|e| describe(context, &e))?;
 
     match serialized.as_string() {
         Some(string) => serde_json::from_str(&string.to_std_string_escaped())
             .map(Some)
-            .map_err(|e| format!("Failed to convert the result: {}", e)),
+            .map_err(|e| format!("Failed to convert the result: {e}")),
         None => Ok(None),
     }
 }

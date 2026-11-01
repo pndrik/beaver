@@ -3,7 +3,7 @@
 
 use regex::Regex;
 
-use super::Repository;
+use super::{Repository, hardening};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
@@ -21,8 +21,7 @@ async fn get_repositories(ctx: &AppContext) -> Result<Vec<Repository>, AppError>
                 Validation,
                 "configuration_load_failed",
                 &format!(
-                    "Repository configuration is not an array: {}",
-                    GIT_REPOSITORIES_CONFIGURATION_KEY
+                    "Repository configuration is not an array: {GIT_REPOSITORIES_CONFIGURATION_KEY}"
                 ),
                 ctx.clone()
             )
@@ -33,10 +32,7 @@ async fn get_repositories(ctx: &AppContext) -> Result<Vec<Repository>, AppError>
                 app_error!(
                     Validation,
                     "configuration_load_failed",
-                    &format!(
-                        "Failed to deserialize MCP server configuration: {}",
-                        e.to_string()
-                    ),
+                    &format!("Failed to deserialize MCP server configuration: {e}"),
                     ctx.clone()
                 )
             })
@@ -48,15 +44,15 @@ pub(super) async fn get_repository_by_url(
     ctx: &AppContext,
     url: &str,
 ) -> Result<Repository, AppError> {
+    hardening::validate_url(url)
+        .map_err(|message| app_error!(Validation, "tool_failed", &message, ctx.clone()))?;
     let repositories = get_repositories(ctx).await?;
 
     let mut repository = repositories
         .into_iter()
         .find(|repo| {
             if repo.url.starts_with('^') && repo.url.ends_with('$') {
-                return Regex::new(&repo.url)
-                    .map(|re| re.is_match(url))
-                    .unwrap_or(false);
+                return Regex::new(&repo.url).is_ok_and(|re| re.is_match(url));
             }
 
             repo.url == url
@@ -65,7 +61,7 @@ pub(super) async fn get_repository_by_url(
             app_error!(
                 NotFound,
                 "configuration_load_failed",
-                &format!("No configuration for repository: {}", url),
+                &format!("No configuration for repository: {url}"),
                 ctx.clone()
             )
         })?;

@@ -7,6 +7,8 @@ pub use app_context::*;
 mod app_error;
 pub use app_error::*;
 
+pub mod file;
+
 mod literal_or_regex;
 pub use literal_or_regex::*;
 

@@ -34,9 +34,12 @@ impl Tools {
                     .await?
                     .into_iter()
                     .filter(|tool| configuration.has_tool_permission(&tool.name))
-                    .map(|tool| match configuration.redirect_output {
-                        true => redirect::with_redirect(tool),
-                        false => tool,
+                    .map(|tool| {
+                        if configuration.redirect_output {
+                            redirect::with_redirect(tool)
+                        } else {
+                            tool
+                        }
                     }),
             );
         }

@@ -3,7 +3,6 @@
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::{fs, path::Path};
 
 use super::super::permissions;
 use app_domains::{
@@ -64,48 +63,20 @@ impl Tool for Delete {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = permissions::absolute_path(ctx, conversation, &permissions, &args.path)?;
+        let path = permissions::leaf(ctx, conversation, &permissions, &args.path).await?;
+        let chroot = conversation.chroot();
+        let metadata = chroot.metadata(ctx, path.as_str()).await?;
 
-        delete_path(ctx, &path)
-    }
-}
-
-fn delete_path(ctx: &AppContext, path: &Path) -> Result<String, AppError> {
-    let metadata = fs::metadata(path).map_err(|e| {
-        app_error!(
-            Internal,
-            "tool_failed",
-            &format!("Failed to access path '{}': {}", path.display(), e),
-            ctx.clone()
-        )
-    })?;
-
-    if metadata.is_dir() {
-        fs::remove_dir_all(path).map_err(|e| {
-            app_error!(
-                Internal,
-                "tool_failed",
-                &format!("Failed to delete directory '{}': {}", path.display(), e),
-                ctx.clone()
-            )
-        })?;
-
-        Ok(format!("Deleted directory '{}'", path.display()))
-    } else {
-        fs::remove_file(path).map_err(|e| {
-            app_error!(
-                Internal,
-                "tool_failed",
-                &format!("Failed to delete file '{}': {}", path.display(), e),
-                ctx.clone()
-            )
-        })?;
-
-        Ok(format!("Deleted file '{}'", path.display()))
+        chroot.unlink(ctx, path.as_str(), metadata.is_dir()).await?;
+        if metadata.is_dir() {
+            Ok(format!("Deleted directory '{}'", args.path))
+        } else {
+            Ok(format!("Deleted file '{}'", args.path))
+        }
     }
 }

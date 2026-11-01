@@ -77,7 +77,7 @@ impl McpSession {
         }
 
         if let Some(bearer) = &credentials.bearer {
-            let auth_value = format!("Bearer {}", bearer);
+            let auth_value = format!("Bearer {bearer}");
             headers.insert(
                 HeaderName::from_static("authorization"),
                 HeaderValue::from_str(&auth_value).map_err(|e| {
@@ -177,7 +177,8 @@ impl McpSession {
         headers: HashMap<HeaderName, HeaderValue>,
         lifecycle: ClientLifecycleMode,
         version: ProtocolVersion,
-    ) -> Result<RunningService<RoleClient, InitializeRequestParams>, ClientInitializeError> {
+    ) -> Result<RunningService<RoleClient, InitializeRequestParams>, Box<ClientInitializeError>>
+    {
         let transport_config =
             StreamableHttpClientTransportConfig::with_uri(self.server.url.clone())
                 .custom_headers(headers);
@@ -188,7 +189,10 @@ impl McpSession {
         )
         .with_protocol_version(version);
 
-        client_info.serve_with_lifecycle(transport, lifecycle).await
+        client_info
+            .serve_with_lifecycle(transport, lifecycle)
+            .await
+            .map_err(Box::new)
     }
 
     pub(super) async fn start_session(&mut self, ctx: &AppContext) -> Result<(), AppError> {
@@ -197,19 +201,21 @@ impl McpSession {
         let auto = matches!(lifecycle, ClientLifecycleMode::Auto { .. });
 
         let result = match self.connect(headers.clone(), lifecycle, version).await {
-            Err(ClientInitializeError::NoCompatibleProtocolVersion {
-                client_supported,
-                server_supported,
-            }) if auto => match Self::legacy_fallback_version(&server_supported) {
-                Some(fallback) => {
-                    self.connect(headers, ClientLifecycleMode::Initialize, fallback)
-                        .await
+            Err(err) if auto => {
+                let fallback = match &*err {
+                    ClientInitializeError::NoCompatibleProtocolVersion {
+                        server_supported, ..
+                    } => Self::legacy_fallback_version(server_supported),
+                    _ => None,
+                };
+                match fallback {
+                    Some(fallback) => {
+                        self.connect(headers, ClientLifecycleMode::Initialize, fallback)
+                            .await
+                    }
+                    None => Err(err),
                 }
-                None => Err(ClientInitializeError::NoCompatibleProtocolVersion {
-                    client_supported,
-                    server_supported,
-                }),
-            },
+            }
             result => result,
         };
 
@@ -267,7 +273,7 @@ impl McpSession {
             ));
         };
 
-        let tools = client.list_tools(Default::default()).await.map_err(|e| {
+        let tools = client.list_tools(Option::default()).await.map_err(|e| {
             app_error!(
                 Internal,
                 "internal_error",

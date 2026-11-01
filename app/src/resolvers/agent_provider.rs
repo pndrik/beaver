@@ -21,15 +21,12 @@ async fn get_provider_name(ctx: &AppContext) -> Result<String, AppError> {
 pub async fn agent_provider(
     ctx: &AppContext,
 ) -> Result<Arc<dyn AgentProvider + Send + Sync>, AppError> {
-    let provider_name = get_provider_name(&ctx).await?;
+    let provider_name = get_provider_name(ctx).await?;
     if provider_name != "file" {
         return Err(app_error!(
             Internal,
             "bootstrap_failed",
-            &format!(
-                "Unsupported agent provider: {}. Only 'file' is supported.",
-                provider_name
-            ),
+            &format!("Unsupported agent provider: {provider_name}. Only 'file' is supported."),
             ctx.clone()
         ));
     }

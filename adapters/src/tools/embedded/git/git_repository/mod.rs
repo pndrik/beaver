@@ -5,9 +5,9 @@ use git2::{
     BranchType, Error, IndexAddOption,
     build::{CheckoutBuilder, RepoBuilder},
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use super::Repository;
+use super::{Repository, hardening};
 
 mod helpers;
 mod history;
@@ -21,14 +21,14 @@ pub struct GitRepository {
 }
 
 impl GitRepository {
-    pub fn new(repository: Repository, path: &str) -> Self {
+    pub fn new(repository: Repository, path: &Path) -> Self {
         Self {
-            path: PathBuf::from(path),
+            path: path.to_path_buf(),
             repository,
         }
     }
 
-    pub fn local(path: &str) -> Self {
+    pub fn local(path: &Path) -> Self {
         Self::new(
             Repository {
                 url: String::new(),
@@ -44,9 +44,16 @@ impl GitRepository {
     }
 
     pub fn clone(&self) -> Result<(), Error> {
+        hardening::isolate();
+        let mut no_checkout = CheckoutBuilder::new();
+        no_checkout.dry_run();
         RepoBuilder::new()
             .fetch_options(self.fetch_options())
+            .with_checkout(no_checkout)
             .clone(&self.repository.url, &self.path)?;
+
+        self.open()?
+            .checkout_head(Some(CheckoutBuilder::new().force()))?;
 
         Ok(())
     }
@@ -92,7 +99,7 @@ impl GitRepository {
 
     pub fn checkout(&self, branch: &str) -> Result<(), Error> {
         let repo = self.open()?;
-        self.ensure_local_branch(&repo, branch)?;
+        GitRepository::ensure_local_branch(&repo, branch)?;
 
         let local_refname = Self::local_ref(branch);
         let obj = repo.revparse_single(&local_refname)?;
@@ -123,7 +130,7 @@ impl GitRepository {
             .and_then(|h| h.target())
             .and_then(|oid| repo.find_commit(oid).ok());
 
-        let parent_tree_id = parent_commit.as_ref().map(|commit| commit.tree_id());
+        let parent_tree_id = parent_commit.as_ref().map(git2::Commit::tree_id);
         let is_empty = match parent_tree_id {
             Some(parent_tree_id) => parent_tree_id == tree_id,
             None => tree.is_empty(),

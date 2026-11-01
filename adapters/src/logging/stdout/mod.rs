@@ -36,13 +36,13 @@ impl Logging for Stdout {
             |message: String| app_error!(Internal, "bootstrap_failed", &message, ctx.clone());
         let level: LevelFilter = level
             .parse()
-            .map_err(|_| failed(format!("Invalid log level: {}", level)))?;
+            .map_err(|_| failed(format!("Invalid log level: {level}")))?;
 
         tracing_subscriber::registry()
             .with(level)
             .with(JsonLines)
             .try_init()
-            .map_err(|e| failed(format!("Failed to initialize logging: {}", e)))
+            .map_err(|e| failed(format!("Failed to initialize logging: {e}")))
     }
 
     fn context_span(&self, ctx: &AppContext) -> Span {

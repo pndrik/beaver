@@ -47,7 +47,7 @@ async fn render(template: &str, values: Value) -> (Result<String, AppError>, Vec
 async fn renders_existing_values() {
     let (result, warnings) = render("Hi {{ Body.name }}", json!({"Body": {"name": "Ada"}})).await;
     assert_eq!(result.unwrap(), "Hi Ada");
-    assert!(warnings.is_empty());
+    assert_eq!(warnings, [] as [std::string::String; 0]);
 }
 
 #[tokio::test]
@@ -55,7 +55,7 @@ async fn missing_leaf_renders_null_and_warns() {
     let (result, warnings) = render("[{{ Body.pr.title }}]", json!({"Body": {"pr": {}}})).await;
     assert_eq!(result.unwrap(), "[<NULL>]");
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0] == "Body.pr.title");
+    assert_eq!(warnings[0], "Body.pr.title");
 }
 
 #[tokio::test]
@@ -63,7 +63,7 @@ async fn missing_intermediate_renders_null_and_warns_once() {
     let (result, warnings) = render("{{ Body.pr.title }} {{ Body.pr }}", json!({"Body": {}})).await;
     assert_eq!(result.unwrap(), "<NULL> <NULL>");
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0] == "Body.pr");
+    assert_eq!(warnings[0], "Body.pr");
 }
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn missing_root_renders_null_and_warns() {
     let (result, warnings) = render("{{ Variables.clone.output }}", json!({})).await;
     assert_eq!(result.unwrap(), "<NULL>");
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0] == "Variables.clone.output");
+    assert_eq!(warnings[0], "Variables.clone.output");
 }
 
 #[tokio::test]
@@ -136,7 +136,7 @@ fn contexts() -> Value {
 async fn last_returns_the_last_item() {
     let (result, warnings) = render("{{ Contexts.c.last().content }}", contexts()).await;
     assert_eq!(result.unwrap(), "second");
-    assert!(warnings.is_empty(), "{:?}", warnings);
+    assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[tokio::test]
@@ -147,7 +147,7 @@ async fn last_of_an_empty_list_is_undefined() {
     )
     .await;
     assert_eq!(result.unwrap(), "<NULL>|False");
-    assert!(warnings.is_empty(), "{:?}", warnings);
+    assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[tokio::test]
@@ -158,8 +158,8 @@ async fn last_of_a_missing_context_warns_once() {
     )
     .await;
     assert_eq!(result.unwrap(), "<NULL> <NULL>");
-    assert_eq!(warnings.len(), 1, "{:?}", warnings);
-    assert!(warnings[0] == "Contexts.missing");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(warnings[0], "Contexts.missing");
 }
 
 #[tokio::test]

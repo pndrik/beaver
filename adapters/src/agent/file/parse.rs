@@ -14,7 +14,7 @@ pub(super) fn parse_agent(ctx: &AppContext, file_content: &str) -> Result<Agent,
         app_error!(
             Internal,
             "configuration_load_failed",
-            &format!("Failed to parse agent file: {}", e),
+            &format!("Failed to parse agent file: {e}"),
             ctx.clone()
         )
     })

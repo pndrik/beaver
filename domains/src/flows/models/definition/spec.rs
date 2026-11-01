@@ -29,14 +29,14 @@ impl Spec {
             identifier(ctx, "context", name)?;
             context
                 .validate(ctx)
-                .map_err(|err| within(&format!("context '{}'", name), err))?;
+                .map_err(|err| within(&format!("context '{name}'"), err))?;
         }
 
         for (name, argument) in &self.arguments {
             identifier(ctx, "argument", name)?;
             argument
                 .validate(ctx)
-                .map_err(|err| within(&format!("argument '{}'", name), err))?;
+                .map_err(|err| within(&format!("argument '{name}'"), err))?;
         }
 
         self.triggers.validate(ctx, &self.arguments)?;
@@ -52,7 +52,7 @@ impl Spec {
         {
             return Err(invalid(
                 ctx,
-                &format!("context '{}' is not used by any step", name),
+                &format!("context '{name}' is not used by any step"),
             ));
         }
 

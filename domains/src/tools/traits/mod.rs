@@ -4,9 +4,6 @@
 mod code_sandbox;
 pub use code_sandbox::*;
 
-mod output_writer;
-pub use output_writer::*;
-
 mod tool;
 pub use tool::*;
 

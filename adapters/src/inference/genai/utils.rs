@@ -10,6 +10,6 @@ pub(super) fn convert_cache_control(cache_control: &MessageCacheLevel) -> Option
         MessageCacheLevel::Ephemeral5min => Some(CacheControl::Ephemeral5m),
         MessageCacheLevel::Ephemeral1h => Some(CacheControl::Ephemeral1h),
         MessageCacheLevel::Ephemeral24h => Some(CacheControl::Ephemeral24h),
-        _ => None,
+        MessageCacheLevel::None => None,
     }
 }

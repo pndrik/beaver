@@ -18,7 +18,7 @@ const DESCRIPTION: &str = "A tool for running JavaScript over files in the chroo
 pub struct JavaScript;
 
 impl JavaScript {
-    pub fn new(sandbox: Arc<dyn CodeSandbox + Send + Sync>) -> EmbeddedToolSet {
+    pub fn tool_set(sandbox: Arc<dyn CodeSandbox + Send + Sync>) -> EmbeddedToolSet {
         EmbeddedToolSet::new(NAME, DESCRIPTION, vec![Box::new(tools::Run::new(sandbox))])
     }
 }

@@ -1,91 +1,64 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use std::path::{Path, PathBuf};
-
 use app_domains::{
     app_error,
-    core::models::{AppContext, AppError},
+    core::{
+        models::{AppContext, AppError, ErrorKind},
+        traits::LocalDirectory,
+    },
     inference::models::Conversation,
     tools::models::ToolPermission,
 };
 
-fn validate_path(
-    ctx: &AppContext,
-    _permissions: &ToolPermission,
-    path: &str,
-) -> Result<(), AppError> {
-    if path.contains("..") {
-        return Err(app_error!(
-            Validation,
-            "tool_failed",
-            &format!("Path must not contain '..': '{}'", path),
-            ctx.clone()
-        ));
-    }
-
-    if !path.starts_with('/') {
-        return Err(app_error!(
-            Validation,
-            "tool_failed",
-            &format!("Path must be absolute: '{}'", path),
-            ctx.clone()
-        ));
-    }
-
-    Ok(())
-}
-
-pub(super) fn existing_repo_path(
+pub(super) async fn repository(
     ctx: &AppContext,
     conversation: &Conversation,
     permissions: &ToolPermission,
     path: &str,
-) -> Result<PathBuf, AppError> {
-    validate_path(ctx, permissions, path)?;
-
-    let absolute_path = conversation.get_absolute_path(ctx, path)?;
-    Path::new(&absolute_path).canonicalize().map_err(|e| {
-        app_error!(
-            Validation,
-            "tool_failed",
-            &format!("Invalid path '{}': {}", path, e),
-            ctx.clone()
-        )
-    })
+) -> Result<Box<dyn LocalDirectory + Send + Sync>, AppError> {
+    permissions.scoped_path(ctx, path)?;
+    let resolved = conversation.chroot().resolve(ctx, path).await?;
+    permissions.scoped_path(ctx, resolved.as_str())?;
+    conversation
+        .chroot()
+        .materialize(ctx, resolved.as_str())
+        .await
 }
 
-pub(super) fn clone_target_path(
+pub(super) async fn clone_target(
     ctx: &AppContext,
     conversation: &Conversation,
     permissions: &ToolPermission,
     path: &str,
-) -> Result<PathBuf, AppError> {
-    validate_path(ctx, permissions, path)?;
-
-    let chroot_root = Path::new(conversation.chroot());
-    let sub_path_sanitized = path.trim_start_matches('/');
-    let full_path = chroot_root.join(sub_path_sanitized);
-
-    if full_path.exists() {
+) -> Result<(Box<dyn LocalDirectory + Send + Sync>, String), AppError> {
+    let parsed = permissions.scoped_path(ctx, path)?;
+    let (Some(parent), Some(name)) = (parsed.parent(), parsed.file_name()) else {
         return Err(app_error!(
             Validation,
             "tool_failed",
-            &format!("Path '{}' already exists", path),
+            &format!("Path '{path}' can't be cloned into"),
             ctx.clone()
         ));
-    }
+    };
 
-    if let Some(parent) = full_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            app_error!(
-                Internal,
+    let chroot = conversation.chroot();
+    match chroot.metadata(ctx, path).await {
+        Err(err) if err.kind == ErrorKind::NotFound => {}
+        Err(err) => return Err(err),
+        Ok(_) => {
+            return Err(app_error!(
+                Validation,
                 "tool_failed",
-                &format!("Failed to create parent directory for '{}': {}", path, e),
+                &format!("Path '{path}' already exists"),
                 ctx.clone()
-            )
-        })?;
+            ));
+        }
     }
 
-    Ok(full_path)
+    chroot.mkdir(ctx, parent.as_str(), true).await?;
+    let resolved = chroot.resolve(ctx, parent.as_str()).await?;
+    permissions.scoped_path(ctx, resolved.as_str())?;
+    let local = chroot.materialize(ctx, resolved.as_str()).await?;
+    Ok((local, name.to_string()))
 }

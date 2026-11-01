@@ -63,19 +63,27 @@ impl ConfigurationUniversal {
 
     fn get_cache_ttl(&self, ctx: &AppContext) -> Result<u64, AppError> {
         if let Some(cached) = self.get_from_cache(ctx, CACHE_TTL_KEY)? {
-            let ttl = cached.value_int.unwrap_or(0) as u64;
-            if cached.created_at >= current_timestamp() - ttl {
+            let ttl = u64::try_from(cached.value_int.unwrap_or(0)).unwrap_or(0);
+            if cached.created_at >= current_timestamp().saturating_sub(ttl) {
                 return Ok(ttl);
             }
         }
 
-        let ttl = self.get_direct_int(ctx, CACHE_TTL_KEY)? as u64;
+        let value = self.get_direct_int(ctx, CACHE_TTL_KEY)?;
+        let ttl = u64::try_from(value).map_err(|_| {
+            app_error!(
+                Validation,
+                "configuration_load_failed",
+                &format!("Configuration '{CACHE_TTL_KEY}' must not be negative: {value}"),
+                ctx.clone()
+            )
+        })?;
         self.write_to_cache(
             ctx,
             CACHE_TTL_KEY,
             CacheObject {
                 value_string: None,
-                value_int: Some(ttl as i64),
+                value_int: Some(value),
                 value_bool: None,
                 created_at: current_timestamp(),
             },

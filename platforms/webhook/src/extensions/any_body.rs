@@ -21,8 +21,7 @@ where
             .headers()
             .get(CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
-            .map(|v| v.split(';').next().unwrap_or("").trim())
-            .unwrap_or("");
+            .map_or("", |v| v.split(';').next().unwrap_or("").trim());
 
         let value = match content_type {
             "application/json" => {

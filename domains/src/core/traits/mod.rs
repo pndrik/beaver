@@ -10,6 +10,12 @@ pub use context::*;
 mod context_factory;
 pub use context_factory::*;
 
+mod file_system;
+pub use file_system::*;
+
+mod local_directory;
+pub use local_directory::*;
+
 mod logging;
 pub use logging::*;
 

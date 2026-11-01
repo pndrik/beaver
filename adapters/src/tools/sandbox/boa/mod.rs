@@ -3,11 +3,11 @@
 
 use async_trait::async_trait;
 use std::{cell::RefCell, rc::Rc};
+use tokio::runtime::Handle;
 
 use app_domains::{
     app_error,
-    core::models::{AppContext, AppError},
-    inference::models::chroot,
+    core::models::{AppContext, AppError, file::Chroot},
     tools::{
         models::{SandboxOutput, SandboxRun, SandboxSource},
         traits::CodeSandbox,
@@ -43,18 +43,19 @@ impl CodeSandbox for Boa {
     async fn run(
         &self,
         ctx: &AppContext,
-        chroot: &str,
+        chroot: &Chroot,
         run: SandboxRun,
     ) -> Result<SandboxOutput, AppError> {
         let ctx_clone = ctx.clone();
-        let chroot = chroot.to_string();
-        tokio::task::spawn_blocking(move || Engine::new(chroot, run).run(&ctx_clone))
+        let chroot = chroot.clone();
+        let handle = Handle::current();
+        tokio::task::spawn_blocking(move || Engine::new(chroot, handle, run).run(&ctx_clone))
             .await
             .map_err(|e| {
                 app_error!(
                     Internal,
                     "tool_failed",
-                    &format!("JavaScript execution failed: {}", e),
+                    &format!("JavaScript execution failed: {e}"),
                     ctx.clone()
                 )
             })?
@@ -64,27 +65,34 @@ impl CodeSandbox for Boa {
 /// One run on its own Boa context. Boa isn't `Send`, so it lives on the
 /// blocking thread.
 struct Engine {
-    chroot: String,
+    chroot: Chroot,
+    handle: Handle,
     run: SandboxRun,
     console: Rc<RefCell<String>>,
 }
 
 impl Engine {
-    fn new(chroot: String, run: SandboxRun) -> Self {
+    fn new(chroot: Chroot, handle: Handle, run: SandboxRun) -> Self {
         Self {
             chroot,
+            handle,
             run,
             console: Rc::new(RefCell::new(String::new())),
         }
     }
 
     fn run(&self, ctx: &AppContext) -> Result<SandboxOutput, AppError> {
-        chroot::resolve_path(ctx, &self.chroot, "/")?;
         let modules = match &self.run.source {
-            SandboxSource::Function { directory, .. } => directory,
-            _ => &self.chroot,
+            // TBD: This is dangerous, if accidentally used for anything else than the global JS tools it would allow breaking out of the chroot.
+            SandboxSource::Function { directory, .. } => {
+                module_loader::Modules::directory(ctx, directory)?
+            }
+            _ => module_loader::Modules::Chroot {
+                chroot: self.chroot.clone(),
+                handle: self.handle.clone(),
+            },
         };
-        let loader = Rc::new(module_loader::ChrootModuleLoader::new(ctx, modules)?);
+        let loader = Rc::new(module_loader::ChrootModuleLoader::new(ctx, modules));
         let mut context = self.get_context(ctx, loader.clone())?;
 
         let result = match &self.run.source {

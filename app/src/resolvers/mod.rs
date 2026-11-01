@@ -10,6 +10,9 @@ pub(crate) use code_sandbox::*;
 mod context_factory;
 pub(crate) use context_factory::*;
 
+mod file_system;
+pub(crate) use file_system::*;
+
 mod logging;
 pub(crate) use logging::*;
 
@@ -18,9 +21,6 @@ pub(crate) use flow_provider::*;
 
 mod inference_providers;
 pub(crate) use inference_providers::*;
-
-mod output_writer;
-pub(crate) use output_writer::*;
 
 mod tools_provider;
 pub(crate) use tools_provider::*;

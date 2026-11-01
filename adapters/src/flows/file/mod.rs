@@ -12,7 +12,7 @@ use app_domains::{
 
 use super::token;
 
-mod file;
+mod io;
 mod parse;
 
 #[cfg(test)]
@@ -37,19 +37,19 @@ impl File {
         Ok((!path.is_empty()).then(|| path.to_string()))
     }
 
-    fn list_flow_names(&self, ctx: &AppContext, flows_dir: &str) -> Result<Vec<String>, AppError> {
-        file::list_yaml_files(ctx, flows_dir)?
+    fn list_flow_names(ctx: &AppContext, flows_dir: &str) -> Result<Vec<String>, AppError> {
+        io::list_yaml_files(ctx, flows_dir)?
             .iter()
             .map(|path| {
                 path.split('/')
                     .next_back()
                     .and_then(|name| name.strip_suffix(".yaml"))
-                    .map(|name| name.to_string())
+                    .map(std::string::ToString::to_string)
                     .ok_or_else(|| {
                         app_error!(
                             Internal,
                             "configuration_load_failed",
-                            &format!("Invalid flow file name: {}", path),
+                            &format!("Invalid flow file name: {path}"),
                             ctx.clone()
                         )
                     })
@@ -58,12 +58,11 @@ impl File {
     }
 
     fn load_flow(
-        &self,
         ctx: &AppContext,
         flows_dir: &str,
         flow_name: &str,
     ) -> Result<Definition, AppError> {
-        let config_content = file::read_file(ctx, &format!("{}/{}.yaml", flows_dir, flow_name))?;
+        let config_content = io::read_file(ctx, &format!("{flows_dir}/{flow_name}.yaml"))?;
         let flow = parse::parse_flow(ctx, &config_content)?;
 
         if !flow.metadata.name.is_empty() && flow.metadata.name != flow_name {
@@ -95,26 +94,26 @@ impl FlowProvider for File {
             return Ok(vec![]);
         };
 
-        self.list_flow_names(ctx, &flows_dir)?
+        File::list_flow_names(ctx, &flows_dir)?
             .iter()
-            .map(|name| self.load_flow(ctx, &flows_dir, name))
+            .map(|name| File::load_flow(ctx, &flows_dir, name))
             .collect()
     }
 
     async fn get(&self, ctx: &AppContext, name: &str) -> Result<Definition, AppError> {
         let flows_dir = self.get_flows_dir(ctx).await?;
         let Some(flows_dir) =
-            flows_dir.filter(|dir| file::file_exists(&format!("{}/{}.yaml", dir, name)))
+            flows_dir.filter(|dir| io::file_exists(&format!("{dir}/{name}.yaml")))
         else {
             return Err(app_error!(
                 NotFound,
                 "flow_not_found",
-                &format!("Flow '{}' not found.", name),
+                &format!("Flow '{name}' not found."),
                 ctx.clone()
             ));
         };
 
-        self.load_flow(ctx, &flows_dir, name)
+        File::load_flow(ctx, &flows_dir, name)
     }
 
     async fn get_by_webhook(
@@ -127,8 +126,8 @@ impl FlowProvider for File {
             return Ok(None);
         };
 
-        for flow_name in self.list_flow_names(ctx, &flows_dir)? {
-            let flow = match self.load_flow(ctx, &flows_dir, &flow_name) {
+        for flow_name in File::list_flow_names(ctx, &flows_dir)? {
+            let flow = match File::load_flow(ctx, &flows_dir, &flow_name) {
                 Ok(flow) => flow,
                 Err(err) => {
                     warn!(flow = %flow_name, error = %err.internal_message, "Skipping flow");

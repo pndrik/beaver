@@ -41,7 +41,7 @@ impl FlowProvider for Memory {
                 app_error!(
                     NotFound,
                     "flow_not_found",
-                    &format!("Flow '{}' not found.", name),
+                    &format!("Flow '{name}' not found."),
                     ctx.clone()
                 )
             })

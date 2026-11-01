@@ -1,7 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use crate::context::ContextStandard;
+use crate::{context::ContextStandard, file_system::Disk};
 use std::{fs, sync::Arc};
 
 use serde_json::json;
@@ -10,7 +10,7 @@ use tempfile::TempDir;
 use super::{Boa, fetch::FilteredFetcher, module_loader::ChrootModuleLoader};
 use crate::configuration::ConfigurationMap;
 use app_domains::{
-    core::models::{AppContext, AppError},
+    core::models::{AppContext, AppError, file::Chroot},
     tools::{
         models::{SandboxLimits, SandboxOutput, SandboxRun, SandboxScopes, SandboxSource},
         traits::CodeSandbox,
@@ -40,8 +40,14 @@ fn code(code: &str) -> SandboxSource {
     SandboxSource::Code(code.to_string())
 }
 
+async fn file_system(directory: &TempDir, path: &str) -> Chroot {
+    let ctx = context();
+    let disk = Arc::new(Disk::new(&ctx, &directory.path().to_string_lossy()).unwrap());
+    Chroot::new(&ctx, disk, path, false).await.unwrap()
+}
+
 async fn try_run(chroot: &TempDir, run: SandboxRun) -> Result<SandboxOutput, AppError> {
-    Boa.run(&context(), &chroot.path().to_string_lossy(), run)
+    Boa.run(&context(), &file_system(chroot, "/").await, run)
         .await
 }
 
@@ -69,27 +75,33 @@ fn fetcher_allows_what_its_scopes_allow() {
 
 #[test]
 fn module_specifiers_resolve_inside_the_root() {
-    let root = tempfile::tempdir().unwrap();
-    let loader = ChrootModuleLoader::new(&context(), &root.path().to_string_lossy()).unwrap();
-    let referrer = root.path().canonicalize().unwrap().join("lib/a.js");
+    let referrer = std::path::Path::new("/lib/a.js");
 
-    assert_eq!(loader.resolve("/x/y.js", None).unwrap(), "/x/y.js");
-    assert_eq!(loader.resolve("./y.js", None).unwrap(), "/y.js");
     assert_eq!(
-        loader.resolve("./b.js", Some(&referrer)).unwrap(),
+        ChrootModuleLoader::resolve("/x/y.js", None).unwrap(),
+        "/x/y.js"
+    );
+    assert_eq!(
+        ChrootModuleLoader::resolve("./y.js", None).unwrap(),
+        "/y.js"
+    );
+    assert_eq!(
+        ChrootModuleLoader::resolve("./b.js", Some(referrer)).unwrap(),
         "/lib/b.js"
     );
-    assert_eq!(loader.resolve("../c.js", Some(&referrer)).unwrap(), "/c.js");
-    assert_eq!(loader.resolve("/x/../y.js", None).unwrap(), "/y.js");
-
-    assert!(loader.resolve("lodash", None).is_err());
-    assert!(loader.resolve("../../c.js", Some(&referrer)).is_err());
-    assert!(loader.resolve("/../c.js", None).is_err());
-    assert!(
-        loader
-            .resolve("./a.js", Some(std::path::Path::new("/etc/a.js")))
-            .is_err()
+    assert_eq!(
+        ChrootModuleLoader::resolve("../c.js", Some(referrer)).unwrap(),
+        "/c.js"
     );
+    assert_eq!(
+        ChrootModuleLoader::resolve("/x/../y.js", None).unwrap(),
+        "/y.js"
+    );
+
+    assert!(ChrootModuleLoader::resolve("lodash", None).is_err());
+    assert!(ChrootModuleLoader::resolve("../../c.js", Some(referrer)).is_err());
+    assert!(ChrootModuleLoader::resolve("/../c.js", None).is_err());
+    assert!(ChrootModuleLoader::resolve("./a.js", Some(std::path::Path::new("etc/a.js"))).is_err());
 }
 
 #[tokio::test]
@@ -212,11 +224,7 @@ async fn filesystem_scopes_limit_paths_and_operations() {
     fs::create_dir_all(chroot.path().join("out")).unwrap();
     fs::write(chroot.path().join("data/a.txt"), "a").unwrap();
     fs::write(chroot.path().join("secret.txt"), "secret").unwrap();
-    std::os::unix::fs::symlink(
-        chroot.path().join("secret.txt"),
-        chroot.path().join("data/link.txt"),
-    )
-    .unwrap();
+    std::os::unix::fs::symlink("../secret.txt", chroot.path().join("data/link.txt")).unwrap();
 
     let scoped = |script: &str| {
         let mut run = request(code(script));
@@ -241,14 +249,18 @@ async fn filesystem_scopes_limit_paths_and_operations() {
     for script in [
         r#"fs.readFile("/secret.txt");"#,
         r#"fs.readFile("/data/link.txt");"#,
-        r#"fs.readFile("/data/../secret.txt");"#,
         r#"fs.writeFile("/data/a.txt", "x");"#,
         r#"fs.readFile("/out/b.txt");"#,
         r#"fs.readDir("/");"#,
     ] {
         let error = run(&chroot, scoped(script)).await.result.unwrap_err();
-        assert!(error.contains("is not allowed to"), "{}: {}", script, error);
+        assert!(error.contains("is not allowed to"), "{script}: {error}");
     }
+    let error = run(&chroot, scoped(r#"fs.readFile("/data/../secret.txt");"#))
+        .await
+        .result
+        .unwrap_err();
+    assert!(error.contains("must not contain '..'"), "{}", error);
     assert_eq!(
         fs::read_to_string(chroot.path().join("data/a.txt")).unwrap(),
         "a"
@@ -279,9 +291,36 @@ async fn limits_stop_runaway_code() {
 }
 
 #[tokio::test]
-async fn an_invalid_chroot_fails_the_run() {
-    let result = Boa
-        .run(&context(), "/does/not/exist", request(code("")))
-        .await;
-    assert!(result.is_err());
+async fn a_sub_chroot_confines_files_and_modules() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("sub")).unwrap();
+    fs::write(directory.path().join("outer.js"), "export default 'outer';").unwrap();
+    fs::write(directory.path().join("sub/inner.txt"), "inner").unwrap();
+    std::os::unix::fs::symlink("../outer.js", directory.path().join("sub/up.js")).unwrap();
+
+    let ctx = context();
+    let chroot = file_system(&directory, "/sub").await;
+    let scoped = |script: &str| {
+        let mut run = request(code(script));
+        run.scopes = scopes(json!({ "filesystem": [{ "path": "/", "operations": ["read"] }] }));
+        run
+    };
+
+    let inner = Boa.run(&ctx, &chroot, scoped("return fs.readFile('/inner.txt');"));
+    assert_eq!(inner.await.unwrap().result, Ok(Some(json!("inner"))));
+    for script in [
+        "return fs.readFile('/up.js');",
+        "return fs.readFile('/../outer.js');",
+    ] {
+        let output = Boa.run(&ctx, &chroot, scoped(script)).await.unwrap();
+        assert!(output.result.is_err(), "{}", script);
+    }
+    let file = request(SandboxSource::File("/up.js".to_string()));
+    let error = Boa
+        .run(&ctx, &chroot, file)
+        .await
+        .unwrap()
+        .result
+        .unwrap_err();
+    assert!(error.contains("is not accessible"), "{}", error);
 }

@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 
 use crate::{
-    core::models::{AppContext, AppError},
+    core::models::{AppContext, AppError, file::Chroot},
     tools::models::{SandboxOutput, SandboxRun},
 };
 
@@ -13,7 +13,7 @@ pub trait CodeSandbox {
     async fn run(
         &self,
         ctx: &AppContext,
-        chroot: &str,
+        chroot: &Chroot,
         run: SandboxRun,
     ) -> Result<SandboxOutput, AppError>;
 }

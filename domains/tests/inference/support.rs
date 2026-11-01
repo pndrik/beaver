@@ -5,13 +5,11 @@ use app_adapters::context::ContextStandard;
 use std::sync::Arc;
 
 use app_adapters::{
-    agent,
-    configuration::ConfigurationMap,
-    inference::Scripted,
-    tools::{output_writer, provider::EchoProvider},
+    agent, configuration::ConfigurationMap, file_system, inference::Scripted,
+    tools::provider::EchoProvider,
 };
 use app_domains::{
-    core::models::AppContext,
+    core::models::{AppContext, file::Chroot},
     inference::{
         Inference,
         models::{
@@ -95,18 +93,11 @@ pub async fn fixture_with_options(compression: Compression, options: Options) ->
         vec![scripted.clone()],
     )
     .unwrap();
-    let tools = Tools::new(
-        vec![Arc::new(EchoProvider::new(&ctx))],
-        Arc::new(output_writer::Memory::new()),
-    )
-    .unwrap();
+    let tools = Tools::new(vec![Arc::new(EchoProvider::new(&ctx))]).unwrap();
+    let memory = Arc::new(file_system::Memory::new());
+    let chroot = Chroot::new(&ctx, memory, "/", false).await.unwrap();
     let conversation = inference
-        .new_conversation(
-            &ctx,
-            "coder",
-            &tools,
-            &std::env::temp_dir().to_string_lossy(),
-        )
+        .new_conversation(&ctx, "coder", &tools, chroot)
         .await
         .unwrap();
 

@@ -16,10 +16,10 @@ impl CapturedConsole {
         Self { output }
     }
 
-    fn append(&self, msg: String, state: &ConsoleState) -> JsResult<()> {
+    fn append(&self, msg: &str, state: &ConsoleState) -> JsResult<()> {
         let mut output = self.output.borrow_mut();
         output.push_str(&" ".repeat(state.indent()));
-        output.push_str(&msg);
+        output.push_str(msg);
         output.push('\n');
         Ok(())
     }
@@ -27,18 +27,18 @@ impl CapturedConsole {
 
 impl Logger for CapturedConsole {
     fn log(&self, msg: String, state: &ConsoleState, _context: &mut Context) -> JsResult<()> {
-        self.append(msg, state)
+        self.append(&msg, state)
     }
 
     fn info(&self, msg: String, state: &ConsoleState, _context: &mut Context) -> JsResult<()> {
-        self.append(msg, state)
+        self.append(&msg, state)
     }
 
     fn warn(&self, msg: String, state: &ConsoleState, _context: &mut Context) -> JsResult<()> {
-        self.append(msg, state)
+        self.append(&msg, state)
     }
 
     fn error(&self, msg: String, state: &ConsoleState, _context: &mut Context) -> JsResult<()> {
-        self.append(msg, state)
+        self.append(&msg, state)
     }
 }

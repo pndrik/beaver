@@ -51,7 +51,7 @@ async fn resolves_flow_with_valid_token() {
 async fn rejects_wrong_or_empty_tokens() {
     for token in ["wrong", "secre", "secret2", ""] {
         let result = resolve(vec![flow("f", "w", "secret")], "w", token).await;
-        assert_eq!(result.unwrap_err(), ErrorKind::Unauthorized, "{}", token);
+        assert_eq!(result.unwrap_err(), ErrorKind::Unauthorized, "{token}");
     }
 }
 
@@ -159,13 +159,13 @@ async fn flows_without_arguments_run_from_webhooks_and_flow_steps() {
     let plain = flow("plain", "w", "secret");
     assert!(plain.spec.arguments.is_empty());
     let caller: Definition = yaml_serde::from_str(
-        r#"
+        r"
 version: 1
 metadata: { name: caller }
 spec:
   steps:
     - { name: call, type: flow, arguments: { flow: plain } }
-"#,
+",
     )
     .unwrap();
     let fixture = support::fixture(&ctx, vec![plain.clone()]);

@@ -6,8 +6,12 @@ use serde::{Deserialize, Serialize};
 
 mod configuration;
 mod git_repository;
+mod hardening;
 mod permissions;
 mod tools;
+
+#[cfg(test)]
+mod tests;
 
 const NAME: &str = "git";
 const DESCRIPTION: &str = "A tool for interacting with Git repositories.";
@@ -27,7 +31,7 @@ struct Repository {
 pub struct Git;
 
 impl Git {
-    pub fn new() -> EmbeddedToolSet {
+    pub fn tool_set() -> EmbeddedToolSet {
         EmbeddedToolSet::new(
             NAME,
             DESCRIPTION,

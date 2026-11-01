@@ -1,7 +1,7 @@
 // Copyright 2026 Patrick Hunziker
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
-use crate::context::ContextStandard;
+use crate::{context::ContextStandard, file_system::Disk};
 use std::{collections::HashMap, fs, sync::Arc};
 
 use serde_json::json;
@@ -10,7 +10,7 @@ use tempfile::TempDir;
 use super::tools::Run;
 use crate::{configuration::ConfigurationMap, tools::sandbox::Boa};
 use app_domains::{
-    core::models::{AppContext, AppError},
+    core::models::{AppContext, AppError, file::Chroot},
     inference::models::{
         Agent, AgentCacheLevel, AgentInference, Compression, Conversation, Message, Model, Options,
     },
@@ -27,7 +27,7 @@ fn context(configuration: ConfigurationMap) -> AppContext {
     )))
 }
 
-fn conversation(ctx: &AppContext, chroot: &TempDir) -> Conversation {
+async fn conversation(ctx: &AppContext, chroot: &TempDir) -> Conversation {
     let agent = Agent::new(
         "agent".to_string(),
         "agent".to_string(),
@@ -41,19 +41,27 @@ fn conversation(ctx: &AppContext, chroot: &TempDir) -> Conversation {
         },
     );
     Conversation::new(
-        ctx,
         Message::system(String::new(), &agent),
         agent,
         vec![],
-        &chroot.path().to_string_lossy(),
+        Chroot::new(
+            ctx,
+            Arc::new(Disk::new(ctx, &chroot.path().to_string_lossy()).unwrap()),
+            "/",
+            false,
+        )
+        .await
+        .unwrap(),
     )
-    .unwrap()
 }
 
 fn permission(scopes: &[&str]) -> ToolPermission {
     ToolPermission {
         name: "javascript_run".to_string(),
-        scopes: scopes.iter().map(|scope| scope.to_string()).collect(),
+        scopes: scopes
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect(),
     }
 }
 
@@ -88,7 +96,7 @@ async fn run_with(
     call: Call,
 ) -> Result<String, AppError> {
     let ctx = context(configuration);
-    let mut conversation = conversation(&ctx, chroot);
+    let mut conversation = conversation(&ctx, chroot).await;
     Run::new(Arc::new(Boa::new()))
         .call(&ctx, &mut conversation, permission(scopes), &call)
         .await
@@ -151,7 +159,7 @@ async fn reads_lists_writes_and_appends_files() {
     .await
     .unwrap();
 
-    assert_eq!(result, r#"["data.json","escape/","out/"]"#);
+    assert_eq!(result, r#"["data.json","escape","out/"]"#);
     assert_eq!(
         fs::read_to_string(chroot.path().join("out/sum.txt")).unwrap(),
         "6!"

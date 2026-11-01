@@ -124,6 +124,7 @@ impl SchemaField {
 }
 
 /// JSON equality that compares numbers by value, so `1` equals `1.0`.
+#[expect(clippy::float_cmp, reason = "enum values must match exactly")]
 fn json_equal(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     match (a.as_f64(), b.as_f64()) {
         (Some(x), Some(y)) if a.is_number() && b.is_number() => x == y,

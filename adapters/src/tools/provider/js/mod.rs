@@ -48,11 +48,8 @@ impl ToolsProvider for JavascriptProvider {
         self.tools.clear();
 
         for dir in dirs {
-            let package = match self.load_package_info(ctx, &dir).await {
-                Ok(pkg) => pkg,
-                Err(_) => {
-                    continue;
-                }
+            let Ok(package) = Self::load_package_info(ctx, &dir) else {
+                continue;
             };
 
             for (name, tool) in package.config.beaver.tools {
@@ -81,7 +78,7 @@ impl ToolsProvider for JavascriptProvider {
             .iter()
             .map(|(name, tool)| {
                 Ok(app_domains::tools::models::Tool {
-                    name: format!("js_{}", name),
+                    name: format!("js_{name}"),
                     description: tool.description.clone(),
                     schema: tool.parameters.clone(),
                 })
@@ -99,13 +96,13 @@ impl ToolsProvider for JavascriptProvider {
             return Err(app_error!(
                 NotFound,
                 "tool_not_found",
-                &format!("Tool with name '{}' not found", name),
+                &format!("Tool with name '{name}' not found"),
                 ctx.clone()
             ));
         };
 
         Ok(app_domains::tools::models::Tool {
-            name: format!("js_{}", name),
+            name: format!("js_{name}"),
             description: tool.description.clone(),
             schema: tool.parameters.clone(),
         })
@@ -123,7 +120,7 @@ impl ToolsProvider for JavascriptProvider {
             return Err(app_error!(
                 NotFound,
                 "tool_not_found",
-                &format!("Tool with name '{}' not found", name),
+                &format!("Tool with name '{name}' not found"),
                 ctx.clone()
             ));
         };
@@ -138,7 +135,7 @@ impl ToolsProvider for JavascriptProvider {
                 arguments: vec![
                     serde_json::Value::Object(input.arguments_as_json_map()),
                     configuration,
-                    self.permission_to_value(&permissions),
+                    Self::permission_to_value(&permissions),
                 ],
             },
             scopes: tool.scopes.clone(),

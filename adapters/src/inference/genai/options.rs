@@ -19,7 +19,6 @@ fn anthropic_thinking_budget(reasoning_effort: &ReasoningEffort) -> u64 {
 
 impl GenAi {
     pub(super) fn get_options(
-        &self,
         _ctx: &AppContext,
         model: &Model,
         options: &Options,
@@ -34,7 +33,7 @@ impl GenAi {
 
         let mut o = ChatOptions::default()
             .with_normalize_reasoning_content(true)
-            .with_max_tokens(max_tokens.min(u32::MAX as u64) as u32);
+            .with_max_tokens(u32::try_from(max_tokens).unwrap_or(u32::MAX));
 
         if model.supports_temperature() && options.temperature >= 0.0 {
             o = o.with_temperature(options.temperature);
@@ -43,7 +42,7 @@ impl GenAi {
             o = o.with_top_p(options.nucleus);
         }
 
-        if options.stop_sequences.len() > 0 && model.adapter() != ModelAdapter::OpenAIResp {
+        if !options.stop_sequences.is_empty() && model.adapter() != ModelAdapter::OpenAIResp {
             o = o.with_stop_sequences(options.stop_sequences.clone());
         }
 

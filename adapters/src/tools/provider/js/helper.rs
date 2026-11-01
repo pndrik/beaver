@@ -22,17 +22,16 @@ impl JavascriptProvider {
         Ok(path)
     }
 
-    pub(super) async fn load_package_info(
-        &self,
+    pub(super) fn load_package_info(
         ctx: &AppContext,
         dir: &str,
     ) -> Result<models::Package, AppError> {
-        let raw = file::read_file(ctx, &format!("{}/package.json", dir))?;
+        let raw = file::read_file(ctx, &format!("{dir}/package.json"))?;
         let config: models::Package = serde_json::from_str(&raw).map_err(|e| {
             app_error!(
                 Internal,
                 "tool_load_failed",
-                &format!("Failed to parse package.json in {}: {}", dir, e),
+                &format!("Failed to parse package.json in {dir}: {e}"),
                 ctx.clone()
             )
         })?;
@@ -40,7 +39,7 @@ impl JavascriptProvider {
         Ok(config)
     }
 
-    pub(super) fn permission_to_value(&self, permission: &ToolPermission) -> Value {
+    pub(super) fn permission_to_value(permission: &ToolPermission) -> Value {
         json!({ "name": permission.name, "scopes": permission.scopes })
     }
 
@@ -53,7 +52,7 @@ impl JavascriptProvider {
             .configuration()
             .get_map(
                 ctx,
-                &format!("{}.js_{}", CONFIGURATION_SKILL_CONFIGURATION, name),
+                &format!("{CONFIGURATION_SKILL_CONFIGURATION}.js_{name}"),
             )
             .await
             .unwrap_or_default();

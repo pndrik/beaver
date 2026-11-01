@@ -73,20 +73,12 @@ impl Tool for Checkout {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
 
-        let path = permissions::existing_repo_path(ctx, conversation, &permissions, &args.path)?;
-        let path_str = path.to_str().ok_or_else(|| {
-            app_error!(
-                Validation,
-                "tool_failed",
-                &format!("Path '{}' is not valid UTF-8", args.path),
-                ctx.clone()
-            )
-        })?;
+        let local = permissions::repository(ctx, conversation, &permissions, &args.path).await?;
 
         let repository = GitRepository::new(
             Repository {
@@ -98,7 +90,7 @@ impl Tool for Checkout {
                 password: None,
                 known_hosts: vec![],
             },
-            path_str,
+            local.path(),
         );
 
         repository.checkout(&args.branch).map_err(|e| {
@@ -112,6 +104,8 @@ impl Tool for Checkout {
                 ctx.clone()
             )
         })?;
+
+        local.sync(ctx).await?;
 
         Ok(format!(
             "Checked out branch '{}' in repository '{}'",

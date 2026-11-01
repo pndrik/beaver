@@ -39,10 +39,7 @@ impl TriggerWebhook {
         {
             return Err(invalid(
                 ctx,
-                &format!(
-                    "triggers.webhook.arguments maps unknown argument '{}'",
-                    name
-                ),
+                &format!("triggers.webhook.arguments maps unknown argument '{name}'"),
             ));
         }
         if let Some((name, _)) = arguments
@@ -51,10 +48,7 @@ impl TriggerWebhook {
         {
             return Err(invalid(
                 ctx,
-                &format!(
-                    "triggers.webhook.arguments does not map required argument '{}'",
-                    name
-                ),
+                &format!("triggers.webhook.arguments does not map required argument '{name}'"),
             ));
         }
         Ok(())

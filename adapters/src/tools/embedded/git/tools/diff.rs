@@ -88,7 +88,7 @@ impl Tool for Diff {
             app_error!(
                 Validation,
                 "tool_failed",
-                &format!("Invalid arguments for tool '{}': {}", NAME, e),
+                &format!("Invalid arguments for tool '{NAME}': {e}"),
                 ctx.clone()
             )
         })?;
@@ -98,22 +98,13 @@ impl Tool for Diff {
                 Validation,
                 "tool_failed",
                 &format!(
-                    "Both 'from' and 'to' must be provided together, or neither, for tool '{}'",
-                    NAME
+                    "Both 'from' and 'to' must be provided together, or neither, for tool '{NAME}'"
                 ),
                 ctx.clone()
             ));
         }
 
-        let path = permissions::existing_repo_path(ctx, conversation, &permissions, &args.path)?;
-        let path_str = path.to_str().ok_or_else(|| {
-            app_error!(
-                Validation,
-                "tool_failed",
-                &format!("Path '{}' is not valid UTF-8", args.path),
-                ctx.clone()
-            )
-        })?;
+        let local = permissions::repository(ctx, conversation, &permissions, &args.path).await?;
 
         let repository = GitRepository::new(
             Repository {
@@ -125,7 +116,7 @@ impl Tool for Diff {
                 password: None,
                 known_hosts: vec![],
             },
-            path_str,
+            local.path(),
         );
 
         let diff = repository

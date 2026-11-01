@@ -4,13 +4,14 @@
 mod agent;
 pub use agent::*;
 
-pub mod chroot;
-
 mod compression;
 pub use compression::*;
 
 mod conversation;
 pub use conversation::*;
+
+mod conversation_value;
+pub use conversation_value::*;
 
 mod message;
 pub use message::*;
