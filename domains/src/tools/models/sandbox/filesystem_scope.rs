@@ -27,7 +27,7 @@ impl SandboxFilesystemScope {
                         .strip_prefix(literal.trim_end_matches('/'))
                         .is_some_and(|rest| rest.starts_with('/'))
             }
-            LiteralOrRegex::Regex(regex) => regex.is_match(path),
+            LiteralOrRegex::Regex { .. } => self.path.matches(path),
         }
     }
 }

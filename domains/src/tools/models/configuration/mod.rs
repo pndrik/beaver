@@ -7,12 +7,11 @@ pub use tool_denial::*;
 mod tool_permission;
 pub use tool_permission::*;
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     app_error,
-    core::models::{AppContext, AppError},
+    core::models::{AppContext, AppError, LiteralOrRegex},
 };
 
 pub(crate) fn invalid(ctx: &AppContext, message: &str) -> AppError {
@@ -28,15 +27,7 @@ const REGEX_SYNTAX: &[char] = &[
 /// `^` is a regex that has to match the whole tool name (an invalid one
 /// matches nothing), anything else has to be equal.
 fn matches(pattern: &str, tool_name: &str) -> bool {
-    if !pattern.starts_with('^') {
-        return pattern == tool_name;
-    }
-    compile(pattern).is_ok_and(|regex| regex.is_match(tool_name))
-}
-
-/// Anchors the whole pattern, so `^a|b$` means "a or b".
-fn compile(pattern: &str) -> Result<Regex, regex::Error> {
-    Regex::new(&format!("^(?:{pattern})$"))
+    LiteralOrRegex::parse(pattern).is_ok_and(|pattern| pattern.matches(tool_name))
 }
 
 fn check_name(ctx: &AppContext, name: &str) -> Result<(), AppError> {
@@ -44,15 +35,8 @@ fn check_name(ctx: &AppContext, name: &str) -> Result<(), AppError> {
         return Err(invalid(ctx, "name is empty"));
     }
     if name.starts_with('^') {
-        if !name.ends_with('$') {
-            return Err(invalid(ctx, &format!("name '{name}' must end with '$'")));
-        }
-        if let Err(err) = compile(name) {
-            return Err(invalid(
-                ctx,
-                &format!("name '{name}' is not a valid regex: {err}"),
-            ));
-        }
+        LiteralOrRegex::parse(name)
+            .map_err(|message| invalid(ctx, &format!("name '{name}' {message}")))?;
     } else if name.contains(REGEX_SYNTAX) {
         return Err(invalid(
             ctx,

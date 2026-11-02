@@ -13,7 +13,7 @@ spec:
       - name: ^file_.*$
       - name: javascript_run
         scopes:
-          - web:^https://api\.github\.com/
+          - web:^https://api\.github\.com/.*$
   prompt: |
     ## Who you are
     You are Ana, a data analyst. The files you work with are too large to read

@@ -2,17 +2,18 @@
 // Licensed under the Elastic License 2.0. See LICENSE.md in the project root.
 
 use git2::Repository as Git2Repository;
+use serde_json::json;
 use std::{collections::HashMap, fs, os::unix::fs::symlink, sync::Arc};
 use tempfile::TempDir;
 
-use super::tools;
+use super::{configuration::get_repository_by_url, tools};
 use crate::{
     configuration::ConfigurationMap,
     context::ContextStandard,
     file_system::{Disk, Memory},
 };
 use app_domains::{
-    core::models::{AppContext, AppError, file::Chroot},
+    core::models::{AppContext, AppError, ErrorKind, file::Chroot},
     inference::models::{
         Agent, AgentInference, CacheLevel, Compression, Conversation, Message, Model, Options,
     },
@@ -158,4 +159,87 @@ async fn memory_file_systems_are_unsupported() {
         .await
         .unwrap_err();
     assert_eq!(error.translation_key, "file_system_unsupported");
+}
+
+fn repositories(urls: &[&str]) -> AppContext {
+    let repositories: Vec<_> = urls
+        .iter()
+        .map(|url| json!({ "url": url, "email": "bot@example.org" }))
+        .collect();
+    AppContext::new(Arc::new(ContextStandard::new(
+        "test".to_string(),
+        Arc::new(ConfigurationMap::from_iter([(
+            "tools.configuration.git.repositories",
+            json!(repositories),
+        )])),
+    )))
+}
+
+async fn lookup(urls: &[&str], url: &str) -> Result<String, AppError> {
+    get_repository_by_url(&repositories(urls), url)
+        .await
+        .map(|repository| repository.email)
+}
+
+#[tokio::test]
+async fn repository_regexes_match_whole_urls() {
+    let team = ["^ssh://git@example\\.org/team/.*$"];
+    assert!(
+        lookup(&team, "ssh://git@example.org/team/repo.git")
+            .await
+            .is_ok()
+    );
+    for url in [
+        "ssh://git@example.org/other/team/repo.git",
+        "ssh://git@example.org.evil/team/repo.git",
+        "https://evil.example/ssh://git@example.org/team/repo.git",
+    ] {
+        let err = lookup(&team, url).await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::NotFound, "{url}");
+    }
+
+    let either = ["^https://a\\.example/r\\.git|https://b\\.example/r\\.git$"];
+    assert!(lookup(&either, "https://a.example/r.git").await.is_ok());
+    assert!(lookup(&either, "https://b.example/r.git").await.is_ok());
+    assert!(
+        lookup(&either, "https://a.example/r.git.evil")
+            .await
+            .is_err()
+    );
+    assert!(lookup(&either, "https://x.b.example/r.git").await.is_err());
+}
+
+#[tokio::test]
+async fn repository_literals_match_exactly() {
+    let exact = ["https://example.org/team/repo.git"];
+    assert!(
+        lookup(&exact, "https://example.org/team/repo.git")
+            .await
+            .is_ok()
+    );
+    assert!(
+        lookup(&exact, "https://example.org/team/repo.git/x")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn broken_repository_patterns_fail_every_lookup() {
+    for (broken, message) in [
+        ("^ssh://x", "Repository URL '^ssh://x' must end with '$'"),
+        ("^($", "Repository URL '^($' is not a valid regex"),
+    ] {
+        let urls = ["https://example.org/repo.git", broken];
+        let err = lookup(&urls, "https://example.org/repo.git")
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Validation);
+        assert_eq!(err.translation_key, "configuration_load_failed");
+        assert!(
+            err.internal_message.contains(message),
+            "{}",
+            err.internal_message
+        );
+    }
 }

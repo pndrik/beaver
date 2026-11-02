@@ -94,7 +94,7 @@ The sources are read again whenever Beaver looks up a value. Strings, numbers an
 | `tools.configuration.javascript.loop_iteration_limit` | `100000000` | `javascript_run` stops a script after this many loop iterations. |
 | `tools.configuration.javascript.recursion_limit` | `512` | `javascript_run` stops a script at this depth of nested calls. |
 | `tools.configuration.git.repositories` | `[]` | Repositories the git tools may use, one entry per repository with the keys below. A git tool that takes a `url` fails with `No configuration for repository` unless an entry matches. |
-| `repositories[].url` | required | The repository URL, or a regex written `^...$` matching it. The first matching entry is used. |
+| `repositories[].url` | required | The repository URL, or a regex written `^...$` that has to match the whole URL. The first matching entry is used. A regex without the closing `$` or an invalid regex fails every repository lookup with `configuration_load_failed`. |
 | `repositories[].email` | required | Commit author email. |
 | `repositories[].display_name` | `email` | Commit author name. |
 | `repositories[].username` | user in the URL, else `git` | User name for authentication. |

@@ -4,32 +4,41 @@
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// A literal, or a regex if it starts with `^`. A regex has to end with `$`
+/// and matches only whole values (`^a|b$` is "a or b"). Build it with `parse`.
 #[derive(Debug, Clone)]
 pub enum LiteralOrRegex {
     Literal(String),
-    Regex(Regex),
+    Regex { pattern: String, regex: Regex },
 }
 
 impl LiteralOrRegex {
-    pub fn parse(value: &str) -> Result<Self, regex::Error> {
-        if value.starts_with('^') {
-            Regex::new(value).map(Self::Regex)
-        } else {
-            Ok(Self::Literal(value.to_string()))
+    pub fn parse(value: &str) -> Result<Self, String> {
+        if !value.starts_with('^') {
+            return Ok(Self::Literal(value.to_string()));
         }
+        if !value.ends_with('$') {
+            return Err("must end with '$'".to_string());
+        }
+        let regex = Regex::new(&format!("^(?:{value})$"))
+            .map_err(|err| format!("is not a valid regex: {err}"))?;
+        Ok(Self::Regex {
+            pattern: value.to_string(),
+            regex,
+        })
     }
 
     pub fn matches(&self, value: &str) -> bool {
         match self {
             Self::Literal(literal) => literal == value,
-            Self::Regex(regex) => regex.is_match(value),
+            Self::Regex { regex, .. } => regex.is_match(value),
         }
     }
 
     pub fn as_str(&self) -> &str {
         match self {
             Self::Literal(literal) => literal,
-            Self::Regex(regex) => regex.as_str(),
+            Self::Regex { pattern, .. } => pattern,
         }
     }
 }
@@ -43,6 +52,7 @@ impl Serialize for LiteralOrRegex {
 impl<'de> Deserialize<'de> for LiteralOrRegex {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = String::deserialize(deserializer)?;
-        Self::parse(&value).map_err(serde::de::Error::custom)
+        Self::parse(&value)
+            .map_err(|message| serde::de::Error::custom(format!("'{value}' {message}")))
     }
 }

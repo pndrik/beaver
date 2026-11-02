@@ -172,7 +172,7 @@ impl Tool for Run {
         let fetch = permissions::web_patterns(ctx, &permissions)?
             .into_iter()
             .map(|url| SandboxFetchScope {
-                url: LiteralOrRegex::Regex(url),
+                url,
                 methods: vec![],
             })
             .collect();

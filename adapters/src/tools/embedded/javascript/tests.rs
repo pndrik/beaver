@@ -10,7 +10,7 @@ use tempfile::TempDir;
 use super::tools::Run;
 use crate::{configuration::ConfigurationMap, tools::sandbox::Boa};
 use app_domains::{
-    core::models::{AppContext, AppError, file::Chroot},
+    core::models::{AppContext, AppError, ErrorKind, file::Chroot},
     inference::models::{
         Agent, AgentInference, CacheLevel, Compression, Conversation, Message, Model, Options,
     },
@@ -259,6 +259,27 @@ async fn imports_resolve_inside_the_chroot() {
     }
 }
 
+async fn fetch_error(chroot: &TempDir, scopes: &[&str], url: &str) -> AppError {
+    run_with(
+        ConfigurationMap::default(),
+        chroot,
+        scopes,
+        arguments(&[("code", &format!("await fetch({url:?});"))]),
+    )
+    .await
+    .unwrap_err()
+}
+
+async fn run_with_scope(chroot: &TempDir, scope: &str) -> Result<String, AppError> {
+    run_with(
+        ConfigurationMap::default(),
+        chroot,
+        &[scope],
+        arguments(&[("code", r#"fs.writeFile("/ran.txt", "x");"#)]),
+    )
+    .await
+}
+
 #[tokio::test]
 async fn fetch_needs_a_web_scope() {
     let (chroot, _outside) = chroot();
@@ -274,7 +295,13 @@ async fn fetch_needs_a_web_scope() {
     assert_eq!(probe(&[]).await.unwrap(), "undefined");
     assert_eq!(probe(&["https://example.com"]).await.unwrap(), "undefined");
     assert_eq!(
-        probe(&["web:^https://allowed\\.example/"]).await.unwrap(),
+        probe(&["web:^https://allowed\\.example/.*$"])
+            .await
+            .unwrap(),
+        "function"
+    );
+    assert_eq!(
+        probe(&["web:https://allowed.example/x"]).await.unwrap(),
         "function"
     );
 }
@@ -282,14 +309,51 @@ async fn fetch_needs_a_web_scope() {
 #[tokio::test]
 async fn fetch_rejects_urls_that_match_no_web_scope() {
     let (chroot, _outside) = chroot();
-    let err = run_with(
-        ConfigurationMap::default(),
+    let err = fetch_error(
         &chroot,
-        &["web:^https://allowed\\.example/"],
-        arguments(&[("code", r#"await fetch("https://other.example/");"#)]),
+        &["web:^https://allowed\\.example/.*$"],
+        "https://other.example/",
     )
-    .await
-    .unwrap_err();
+    .await;
+    assert!(
+        err.internal_message.contains("URL not allowed"),
+        "{}",
+        err.internal_message
+    );
+}
+
+#[tokio::test]
+async fn web_regexes_match_whole_urls() {
+    let (chroot, _outside) = chroot();
+    for (scope, url) in [
+        (
+            "web:^https://allowed\\.example$",
+            "https://allowed.example.evil/",
+        ),
+        (
+            "web:^https://allowed\\.example/.*$",
+            "https://allowed.example.evil/",
+        ),
+        ("web:^allowed$", "https://evil/?allowed"),
+    ] {
+        let err = fetch_error(&chroot, &[scope], url).await;
+        assert!(
+            err.internal_message.contains("URL not allowed"),
+            "{scope}: {}",
+            err.internal_message
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_literal_web_scope_allows_exactly_its_url() {
+    let (chroot, _outside) = chroot();
+    let err = fetch_error(
+        &chroot,
+        &["web:https://allowed.example/x"],
+        "https://allowed.example/x/y",
+    )
+    .await;
     assert!(
         err.internal_message.contains("URL not allowed"),
         "{}",
@@ -300,16 +364,38 @@ async fn fetch_rejects_urls_that_match_no_web_scope() {
 #[tokio::test]
 async fn invalid_web_scope_fails_before_running() {
     let (chroot, _outside) = chroot();
-    let err = run_with(
-        ConfigurationMap::default(),
-        &chroot,
-        &["web:("],
-        arguments(&[("code", r#"fs.writeFile("/ran.txt", "x");"#)]),
-    )
-    .await
-    .unwrap_err();
-    assert!(err.internal_message.contains("Invalid web scope"));
+    let err = run_with_scope(&chroot, "web:^($").await.unwrap_err();
+    assert!(
+        err.internal_message
+            .contains("Invalid web scope '^($': is not a valid regex"),
+        "{}",
+        err.internal_message
+    );
     assert!(!chroot.path().join("ran.txt").exists());
+}
+
+#[tokio::test]
+async fn web_scope_without_a_trailing_dollar_fails_before_running() {
+    let (chroot, _outside) = chroot();
+    let err = run_with_scope(&chroot, "web:^https://allowed\\.example/")
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Validation);
+    assert_eq!(err.translation_key, "tool_failed");
+    assert!(
+        err.internal_message
+            .contains("Invalid web scope '^https://allowed\\.example/': must end with '$'"),
+        "{}",
+        err.internal_message
+    );
+    assert!(!chroot.path().join("ran.txt").exists());
+}
+
+#[tokio::test]
+async fn a_web_scope_with_regex_syntax_but_no_caret_is_a_literal() {
+    let (chroot, _outside) = chroot();
+    run_with_scope(&chroot, "web:(").await.unwrap();
+    assert!(chroot.path().join("ran.txt").exists());
 }
 
 #[tokio::test]

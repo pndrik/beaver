@@ -36,7 +36,7 @@ Paths are absolute paths in the conversation's chroot, where `/` is its root. Th
 | `git_show` | One commit with message, changed files and diff, optionally for one `file`. At most 1000 lines. | Path prefixes |
 | `git_branches` | Local branches, optionally with remote-tracking ones (`include_remote`). | Path prefixes |
 | `git_branch_delete` | Deletes a local branch and, with `delete_remote`, the one on the remote. | Path prefixes |
-| `javascript_run` | Runs JavaScript on chroot files, see [below](#javascript_run). | `web:<regex>` |
+| `javascript_run` | Runs JavaScript on chroot files, see [below](#javascript_run). | `web:<pattern>` |
 | `subagent_list` | Lists the agents this agent may invoke. | `_list` and agent names |
 | `subagent_invoke` | Starts a conversation with another agent. | `_invoke` and agent names |
 
@@ -62,14 +62,14 @@ The result is every `console.*` call as a line, followed by the value: strings a
 
 Imports only resolve to files in the chroot. Absolute specifiers start at its root, relative ones at the importing module, and packages like `"lodash"` can't be imported. Paths that escape the chroot, through `..` or symlinks, throw.
 
-Web access is off by default. Each `web:<regex>` scope of the allow rule allows any method on URLs the regex matches. The regex is used as written, so anchor it yourself. Redirects are checked against the same regexes. Other scopes are ignored, and an invalid regex fails the tool.
+Web access is off by default. Each `web:<pattern>` scope of the allow rule allows any method on the URLs it matches. A pattern follows the same rule as tool names: one starting with `^` is a regex that must end with `$` and has to match the whole URL (`web:^https://api\.github\.com/.*$`), anything else is a literal that allows exactly that URL. Redirects are checked against the same patterns. Other scopes are ignored, and a regex without the closing `$` or an invalid regex fails the tool before the script runs.
 
 ```yaml
 spec:
   tools:
     allow:
       - name: javascript_run
-        scopes: ['web:^https://api\.github\.com/']
+        scopes: ['web:^https://api\.github\.com/.*$']
 ```
 
 A script stops after [`tools.configuration.javascript.loop_iteration_limit`](configuration.md#toolsconfiguration) loop iterations or at `recursion_limit` nested calls. There is no timeout: a script blocked in a single long operation, like a slow `fetch`, runs until it finishes. See [`examples/agents/analyst.yaml`](../examples/agents/analyst.yaml).
@@ -138,7 +138,7 @@ tools/
 }
 ```
 
-A `url` or `path` starting with `^` is a regex, otherwise a literal. A literal path also covers everything below it. Without `fetch` scopes the tool has no `fetch`, and without `filesystem` scopes it has no `fs`. `fs` offers the same functions as in [`javascript_run`](#javascript_run), with paths in the calling agent's chroot. `javascript_run` itself may read and write the whole chroot.
+A `url` or `path` starting with `^` is a regex that must end with `$` and has to match the whole URL or path; anything else is a literal. A literal URL matches only exactly that URL, a literal path also covers everything below it. A regex without the closing `$` or an invalid regex fails loading the tool, naming the pattern. Without `fetch` scopes the tool has no `fetch`, and without `filesystem` scopes it has no `fs`. `fs` offers the same functions as in [`javascript_run`](#javascript_run), with paths in the calling agent's chroot. `javascript_run` itself may read and write the whole chroot.
 
 The module exports a function `main(input, configuration, permissions)` that returns a string, which becomes the tool result. Any other return value fails the call.
 

@@ -59,7 +59,7 @@ async fn run(chroot: &TempDir, run: SandboxRun) -> SandboxOutput {
 fn fetcher_allows_what_its_scopes_allow() {
     let fetcher = FilteredFetcher::new(
         scopes(json!({ "fetch": [
-            { "url": "^https://api\\.example\\.com/", "methods": ["GET"] },
+            { "url": "^https://api\\.example\\.com/.*$", "methods": ["GET"] },
             { "url": "https://exact.example/" }
         ] }))
         .fetch,
@@ -208,7 +208,7 @@ async fn fs_and_fetch_exist_only_with_scopes() {
 
     let mut allowed = request(probe());
     allowed.scopes = scopes(json!({
-        "fetch": [{ "url": "^https://allowed\\.example/" }],
+        "fetch": [{ "url": "^https://allowed\\.example/.*$" }],
         "filesystem": [{ "path": "/", "operations": ["read"] }]
     }));
     assert_eq!(
@@ -271,7 +271,7 @@ async fn filesystem_scopes_limit_paths_and_operations() {
 async fn fetch_rejects_requests_that_match_no_scope() {
     let chroot = tempfile::tempdir().unwrap();
     let mut denied = request(code(r#"await fetch("https://other.example/");"#));
-    denied.scopes = scopes(json!({ "fetch": [{ "url": "^https://allowed\\.example/" }] }));
+    denied.scopes = scopes(json!({ "fetch": [{ "url": "^https://allowed\\.example/.*$" }] }));
 
     let error = run(&chroot, denied).await.result.unwrap_err();
     assert!(error.contains("URL not allowed"), "{}", error);

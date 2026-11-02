@@ -121,7 +121,7 @@ spec:
       - name: ^file_.*$
         scopes: [/docs, /out]                       # path prefixes in the chroot
       - name: javascript_run
-        scopes: ['web:^https://api\.github\.com/']  # URLs fetch may call
+        scopes: ['web:^https://api\.github\.com/.*$']  # URLs fetch may call
       - name: ^subagent_.*$
         scopes: [_list, _invoke, researcher]        # see Subagents below
       - name: js_slack_post
@@ -281,7 +281,7 @@ spec:
       - name: ^mcp_atlassian_.*$
       # Scripts may call the GitHub API.
       - name: javascript_run
-        scopes: ['web:^https://api\.github\.com/']
+        scopes: ['web:^https://api\.github\.com/.*$']
     deny:
       - name: git_push
       - name: git_branch_delete

@@ -31,7 +31,7 @@ The git tools only open repositories whose git directory, worktree and objects a
 
 ## Scripts
 
-[`javascript_run`](tools.md#javascript_run) runs in Boa, a JavaScript engine without Node.js APIs. Scripts only read, write and import files inside the chroot, can't import packages, and have no `fetch` unless the allow rule has `web:<regex>` scopes. Redirects are checked against the same patterns. Loops and recursion are limited, but there is no timeout.
+[`javascript_run`](tools.md#javascript_run) runs in Boa, a JavaScript engine without Node.js APIs. Scripts only read, write and import files inside the chroot, can't import packages, and have no `fetch` unless the allow rule has `web:<pattern>` scopes: a literal URL, or a `^...$` regex that has to match the whole URL. Redirects are checked against the same patterns. Loops and recursion are limited, but there is no timeout.
 
 ## JavaScript tools
 
