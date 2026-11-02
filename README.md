@@ -204,6 +204,8 @@ Scripts are stopped after `tools.configuration.javascript.loop_iteration_limit` 
 
 The chart in [`chart/`](chart) deploys the webhook server as a Deployment + Service (with an optional Ingress and HPA). Your `configuration.yaml`, agents, and flows are supplied as Helm values and rendered into Kubernetes Secrets that get mounted into the pod; changing them triggers a rollout.
 
+Agents, flows and env vars removed from the values are also removed from the pod on upgrade. The Secrets are named `<release>-agent-definitions`, `<release>-flow-definitions` and `<release>-environment` (renamed in 0.0.22; the old `-agents`, `-flows` and `-env` Secrets are deleted on upgrade).
+
 ```sh
 helm install beaver ./chart -f my-values.yaml
 ```
