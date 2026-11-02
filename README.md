@@ -1,284 +1,110 @@
-# Beaver
+# Beaver: self-hosted AI agents and LLM workflow automation
 
->  ⚠️ Experimental: This project is not production-ready, use at your own risk.
+Beaver is a platform for autonomous AI agents and AI workflows. You define agents and multi-step flows in YAML and trigger them from the CLI or through webhooks, e.g. from GitHub, Bitbucket, Jira or Slack. It's written in Rust and runs as a Docker container or on Kubernetes with Helm.
 
-I built Beaver as I was in need of a solution, allowing me to securely and flexibly define server side AI assisted workflows automating some of the repeated work I do. Many of the existing solutions I found were either client side only, highly insecure, expensive proprietary SaaS or AI spaghetti code.
-
-At the time Beaver allows you to define AI agents in YAML, which can be either triggered via CLI or through flows over a webhook. The focus is on autonomous agents that can call tools all on their own but without jeopardizing security in any way. There is a handful of embedded tools which can be extended with JavaScript or external MCP servers. The agents can use multiple LLM providers (currently Anthropic or OpenCode Zen).
+I built Beaver because I needed a secure and flexible way to automate repeated work with AI on the server side. The solutions I found were client-side only, insecure, expensive proprietary SaaS, or AI spaghetti code. Beaver's agents call tools on their own, but only the tools you allow, and only inside their own sandbox.
 
 ## Features
 
-- **Multi-Provider/-LLM** — Anthropic, Zen (more to come)
-- **Pluggable Tools** — JavaScript (sandboxed) and MCP servers
+- **Multi-Provider/-LLM** — Claude via the Anthropic API, plus GPT, Gemini, Qwen, Kimi, GLM and more via OpenCode Zen
+- **Pluggable Tools** — built-in file, git and JavaScript tools, your own sandboxed JavaScript tools, and MCP (Model Context Protocol) servers
 - **Agents & Flows as YAML** — no custom DSL, just YAML
-- **Ships as a container** — Helm chart included
+- **Webhook triggers** — start an AI workflow from any service that can send an HTTP request
+- **Secure by default** — allow-listed tools, chrooted file access, sandboxed scripts
+- **Subagents and context compression** — agents delegate to other agents and summarize long conversations
+- **Ships as a container** — Docker image (amd64/arm64) and Helm chart included
+
+## Use cases
+
+- Review pull requests automatically: clone the repository, read the diff and comment on the PR.
+- Triage Jira issues or answer Slack messages with an agent that uses MCP or JavaScript tools.
+- Run multi-step AI pipelines with loops, conditions and variables, e.g. "fix, review, repeat until clean".
+- Analyse large files in code instead of the context window.
 
 ## Quick start
 
-Here's a few commands to play with Beaver. It's however recommended to install Beaver using the Helm Chart in [`chart/`](chart) and configure it with your own agents, flows, and tools.
-
-```sh
-# Chat with an agent
-cargo run -p cli -- conversation <agent_name>
-
-# Run the webhook server (serves /healthz and /hooks/{name} on :8080)
-cargo run -p webhook
-```
-
-## Examples
-
-There's a few examples in [`examples/`](examples) and [`chart/values.example.yaml`](chart/values.example.yaml). Here's a simple one, an agent that reviews a pull request and leaves comments on it:
-
-### Agent definition
+Create an agent, a flow that uses it, and a configuration in a directory `local/` of the repository.
 
 ```yaml
+# local/agents/summarizer.yaml
 version: 1
 metadata:
-  name: reviewer
-  display_name: Reviewer
-  description: Reviews pull requests and leaves comments.
+  name: summarizer
+  display_name: Sumi
+  description: Summarizes text in three sentences.
 spec:
   inference:
-    model: claude-fable-5
-  tools:
-    allow:
-      - name: ^js_bitbucket_pr_.*$
-      - name: ^file_.*$
-        scopes: [/repo]
-    deny:
-      - name: js_bitbucket_pr_approve
+    model: claude-sonnet-5-5
   prompt: |
-    Review this pull request's diff and leave feedback as comments.
+    Summarize the text you get in at most three short sentences.
 ```
 
-An agent is one file, `<agents.path>/<name>.yaml`, and `metadata.name` must be exactly `<name>`. Other extensions (`.yml`, `.YAML`) and directories are ignored.
-
-| Key | |
-|---|---|
-| `version` | Required, must be `1`. |
-| `metadata.name`, `display_name`, `description` | Required. Shown by the CLI agent list and `subagent_list`. |
-| `spec.inference` | Required: `model`, and optionally `caching` (`system`, `default`), `options` (`max_tokens`, `temperature`, `nucleus`, `reasoning_effort`, `stop_sequences`) and `compression` (`enabled`, `model`, `prompt`, `tokens`, `messages`). |
-| `spec.tools.allow` | Rules `{ name, scopes }` for the tools the agent may call. Nothing is allowed by default. |
-| `spec.tools.deny` | Rules `{ name }` for tools the agent may never call, even if an allow rule matches. |
-| `spec.tools.redirect_output` | See [output redirection](#working-with-large-data), default `false`. |
-| `spec.prompt` | Required, not blank. |
-
-A rule `name` is either a literal, matching only the tool with exactly that name, or a pattern written `^...$`, a regex that has to match the whole tool name (`^git_.*|evil$` means "`git_…` or `evil`"). A tool is offered and can be called if no deny rule matches it and an allow rule does; the first matching allow rule in file order gives its `scopes`. A denied or unlisted call fails with `tool_permission_denied` and logs a `call_denied` audit warning.
-
-The whole file is checked when it loads, and an invalid agent is never started. Unknown keys (including the old flat layout and `tools.permissions`) fail to parse. Empty names, patterns without the closing `$`, invalid regexes, literals containing regex syntax (`git_.*`), empty scopes, a blank prompt or a name mismatch fail with `agent_invalid`, naming the location, e.g. `Agent 'coder' is invalid: spec.tools.deny[1]: name '^git_' must end with '$'`.
-
-### Flow definition
-
-A flow is a pipeline of steps triggered through the same `/hooks/{name}` endpoint. Flows live in `flows.path` (one `<name>.yaml` per flow, `metadata.name` must match the file name) and are re-read on every trigger, so adding, editing or removing a file needs no restart.
-
 ```yaml
+# local/flows/summarize.yaml
 version: 1
 metadata:
-  name: pr_review_flow
-  description: Clone and review a PR
+  name: summarize
 spec:
   arguments:
-    url: { required: true, regex: "^https://" }
-    title: {}
+    text: { required: true }
   contexts:
-    work:
-      agent: coder
-      chroot: { path: "runs/{{ Ctx.trace_id }}", create: true, delete: true }
+    main: { agent: summarizer }
   triggers:
     webhook:
-      name: pr_review_flow
-      token: "REPLACE_ME"
+      name: summarize
+      token: "<your_flow_token>"
       arguments:
-        url: "{{ Body.repository.links.html.href }}"
-        title: "{{ Body.pullrequest.title }}"
+        text: "{{ Body.text }}"
   steps:
-    - name: clone
-      context: work
-      type: tool
-      arguments:
-        tool: git_clone
-        scopes: ["*"]
-        arguments: { url: "{{ Arguments.url }}", path: "/repo" }
-    - name: review
-      context: work
+    - name: summarize
+      context: main
       type: agent
       arguments:
-        prompt: "Review the PR '{{ Arguments.title }}' in /repo. Clone said: {{ Contexts.work.last().content }}"
+        prompt: "{{ Arguments.text }}"
 ```
-
-- **`version`** is required and must be `1`. Unknown fields are rejected.
-- **Steps** run in order; the first failing step stops the flow. Step names must be identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`) and unique. Every agent and tool step names a declared `context`; `loop`, `set` and `flow` steps have none.
-- **`agent` steps** send the rendered `prompt` to the context's agent. **`tool` steps** call `tool` directly with the rendered `arguments` and the given `scopes`, without an LLM.
-- **Contexts** are declared once under `spec.contexts`, keyed by an identifier name, each with one `agent` and an optional `chroot`. A context is a conversation plus a working directory: steps on the same context share both, so a later agent step continues the earlier conversation and a tool step's result is appended to it. Every declared context must be used by a step. All contexts are created when the run starts, before the first step, so an unknown agent or an invalid chroot fails the run before any work is done. This also happens for contexts whose steps all end up skipped.
-- **`chroot.path`** is a path in the [file system](#file-system), relative (`runs/x`) or absolute (`/runs/x`), both resolved against its root, and must stay inside it, also through symlinks. `create` creates it if it is missing, `delete` removes it when the flow ends, whether it succeeded or not; the root itself can't be deleted. Without `chroot` the whole file system is the chroot. Chroot paths are rendered when the run starts, so they only see `Arguments`, `Ctx` and `Flow`.
-
-#### Arguments
-
-`spec.arguments` declares the only input of a flow: `<name>: { type, regex, required }`. It is optional; a flow without it takes no arguments, and passing any fails the run. `type` is `string` (default), `number` (64-bit integer) or `float`; strings are trimmed and parsed for `number` and `float`. A `string` argument must match its `regex` somewhere (anchor it with `^…$` for a full match). `required` defaults to `false`; an optional argument that was not passed is simply absent. Arguments are checked before any step runs: an undeclared, missing required, unconvertible or non-matching argument fails the run. Names must be identifiers, and a `regex` on a non-string or an invalid one is rejected when the flow loads.
-
-`triggers.webhook.arguments` maps the webhook payload to arguments, `<argument>: <template>`. These templates are the only ones that see `Body` (the payload) and `Query` (query parameters without `token`). Every key must be a declared argument and every required argument must be mapped. The rendered strings are taken literally, so a missing payload field renders `<NULL>` (use a `regex` to catch that). If the mapped arguments are invalid, the hook answers `422` and the flow does not start. Unknown hook names and wrong tokens both get `401`.
-
-#### Conditions and loops
-
-- **`when`** on any step is a list of conditions; the step runs if **any** of them is true, and is skipped (logged) otherwise. A condition is `{ left, operator, right }`, `{ all: [...] }` or `{ any: [...] }`, nested freely. `left` and `right` are templates. `==`/`!=` compare strings, `<`, `<=`, `>`, `>=` compare numbers and `~=` matches `left` against the regex `right`. A non-number in a numeric comparison or an invalid regex fails the step. Empty lists and unknown operators are rejected when the flow loads.
-- **`loop` steps** take `arguments: { steps, max, until }`. They run `steps` in order, then check `until` (same syntax as `when`), and stop once it is true or after `max` iterations (default `3`, at most `100`), logging a warning in the latter case. Step names must be unique across the whole flow, loops included. `when` on the loop gates the whole loop, `when` on an inner step is checked per iteration.
-
-#### Variables
-
-A **`set` step** writes typed variables, `arguments: { <variable>: { value, type, extract, default } }`. `value` is a template, `type` as for arguments. `extract` is an optional regex applied to the rendered value: capture group 1 if the pattern has a group, the whole match otherwise. If nothing matches or the result doesn't convert to `type`, a warning names the step and variable and `default` is used (`""`, `0` or `0.0` without one). All entries of one step render against the values from before the step. Variables are visible as `Variables.<variable>` right away: to later steps, later loop iterations, `when` and `until`.
 
 ```yaml
-- name: refine
-  type: loop
-  arguments:
-    max: 3
-    until: [{ left: "{{ Variables.findings }}", operator: "==", right: "0" }]
-    steps:
-      - { name: fix, context: work, type: agent, arguments: { prompt: "Fix the findings in /repo." } }
-      - { name: check, context: work, type: agent, arguments: { prompt: "Review /repo. End with 'Findings: <count>'." } }
-      - name: count
-        type: set
-        arguments:
-          findings: { value: "{{ Contexts.work.last().content }}", type: number, extract: "Findings: (\\d+)", default: 1 }
+# local/configuration.yaml
+agents:
+  path: ./local/agents
+flows:
+  path: ./local/flows
+inference:
+  providers:
+    anthropic:
+      enabled: true
 ```
 
-#### Calling flows
-
-A **`flow` step** runs another flow synchronously, `arguments: { flow, arguments: { <argument>: <template> } }`. The called flow is loaded by name, its arguments are checked like any other run, and it runs with its own contexts, variables and chroot cleanup, sharing `Ctx`. When it finishes, its final variables are available as `Flows.<step>.<variable>`; when it fails, the step fails. Flow steps nest at most 8 levels deep, which also stops recursion. See [`examples/flows/pythagoras.yaml`](examples/flows/pythagoras.yaml), which calls [`calculate.yaml`](examples/flows/calculate.yaml) three times and combines the results.
-
-Called flows share `Ctx.trace_id`: a child chroot like `runs/{{ Ctx.trace_id }}` with `delete: true` deletes the parent's directory of the same path when the child ends. Give child flows distinct chroot paths.
-
-#### Templates
-
-Prompts, chroot paths, condition sides, `set` values, flow step arguments and every string in tool `arguments` are [MiniJinja](https://docs.rs/minijinja) templates (no HTML escaping) with these values:
-
-| Variable | Content |
-| --- | --- |
-| `Arguments.<argument>` | The typed arguments of the flow |
-| `Variables.<variable>` | The variables written by `set` steps so far |
-| `Contexts.<context>` | The messages of a context, `[{ type, agent, content, tool_calls, usage }]`, empty until its first step. `Contexts.<context>.last()` is the last one |
-| `Flows.<step>.<variable>` | The final variables of the flow called by a `flow` step |
-| `Ctx` | The request context (`trace_id`) |
-| `Flow` | `{ name }` |
-
-Webhook argument mappings instead see `Body`, `Query`, `Ctx` and `Flow`.
-
-A missing value, at any depth, renders as `<NULL>` and logs a warning naming the path; the flow keeps running. `is defined`, `default(...)` and `{% if %}` still see it as undefined, so `{{ Arguments.title | default("untitled") }}` works as expected. `.last()` on an empty list is undefined too. Syntax errors fail the step.
-
-## Working with large data
-
-Tool outputs land in the conversation and use up the context window. Two features keep large data out of it.
-
-**Output redirection.** With `spec.tools.redirect_output: true` in an agent, every provider tool it is offered gets an optional `harness_redirect_to_file` argument. The full output is written to that absolute path in the chroot, replacing the file, and the tool message only shows the name, all arguments and a receipt: `Output written to '/out/prs.json' (48213 bytes, 912 lines)`. The parent directory must exist, and the path must not contain `..` or lead outside the chroot through a symlink. A failing tool writes nothing. A tool argument of the same name is replaced. Subagent tools are not redirected, flow `tool` steps drop the argument and write nothing. Without `redirect_output`, using the argument fails.
-
-**`javascript_run`.** An embedded tool that runs JavaScript the agent writes, so it can filter and aggregate data in code. Pass exactly one of:
-
-- `code`: runs as the body of an async function, so `await` and `return` work at the top level. Modules load with `await import("/lib/x.js")`.
-- `path`: runs a `.js` file of the chroot as an ES module, so static `import` works. The default export is the result; a function is called and awaited. Boa can't parse `export default async () => …`, use `export default async function () { … }`.
-
-The result is every `console.*` call as a line, followed by the value: strings as they are, nothing for `undefined`, JSON otherwise. A throw or rejection fails the tool with the console output so far. Scripts see the chroot as `/`:
-
-| Global | Description |
-| --- | --- |
-| `fs.readFile(path)` | Content of a file as a string. |
-| `fs.readDir(path)` | Entry names, directories end with `/`. Symlinks are not followed. |
-| `fs.writeFile(path, content)`, `fs.appendFile(path, content)` | Replace or append to a file, the parent directory must exist. |
-| `fetch(url, options)` | Only defined if the allow rule has `web:` scopes. |
-
-Imports only resolve to files in the chroot: absolute specifiers start at its root, relative ones at the importing module, packages (`"lodash"`) can't be imported. Paths that escape the chroot, through `..` or symlinks, throw.
-
-Web access is off by default. Each `web:<regex>` scope of the allow rule for `javascript_run` allows any method on URLs the regex matches (as written, anchor it yourself). Redirects are checked against the same regexes. Other scopes are ignored and an invalid regex fails the tool.
-
-```yaml
-spec:
-  tools:
-    redirect_output: true
-    allow:
-      - name: javascript_run
-        scopes: ['web:^https://api\.github\.com/']
-```
-
-Scripts are stopped after `tools.configuration.javascript.loop_iteration_limit` loop iterations (default `100000000`) or at `recursion_limit` nested calls (default `512`). Boa has no timeout, so a script blocked in a single long operation runs until it finishes. See [`examples/agents/analyst.yaml`](examples/agents/analyst.yaml).
-
-## Helm Chart
-
-The chart in [`chart/`](chart) deploys the webhook server as a Deployment + Service (with an optional Ingress and HPA). Your `configuration.yaml`, agents, and flows are supplied as Helm values and rendered into Kubernetes Secrets that get mounted into the pod; changing them triggers a rollout.
-
-Agents, flows and env vars removed from the values are also removed from the pod on upgrade. The Secrets are named `<release>-agent-definitions`, `<release>-flow-definitions` and `<release>-environment` (renamed in 0.0.22; the old `-agents`, `-flows` and `-env` Secrets are deleted on upgrade).
+Then, from the repository root:
 
 ```sh
-helm install beaver ./chart -f my-values.yaml
+export CONFIGURATION__PATH=./local/configuration.yaml
+export INFERENCE__PROVIDERS__ANTHROPIC__APIKEY="<your_anthropic_api_key>"
+
+# Chat with the agent (end with Ctrl-D)
+cargo run -p cli -- conversation summarizer
+
+# Run the webhook server (serves /healthz and /hooks/{name} on :8080),
+# logging the conversation at debug level
+LOGGER__LEVEL=debug cargo run -p webhook
+
+# Trigger the flow from another terminal; the summary shows up in the server log
+curl -H 'Authorization: Bearer <your_flow_token>' -H 'Content-Type: application/json' \
+  -d '{"text": "Beavers are large rodents that build dams..."}' localhost:8080/hooks/summarize
 ```
 
-| Key | Description |
-| --- | --- |
-| `image.repository`, `image.tag` | Image to deploy. |
-| `configuration` | Beaver's `configuration.yaml` |
-| `agents` | Map of agent name → agent definition, same shape as the [agent definition](#agent-definition) above. |
-| `flows` | Map of flow name → flow definition, same shape as the [flow definition](#flow-definition) above. |
-| `env` | Extra environment variables for the container (values are templated). |
-| `ingress.enabled`, `ingress.host` | Expose `/hooks` externally via an Ingress. |
-| `webhook.resources`, `webhook.hpa`, `webhook.securityContext` | Pod resource requests/limits, autoscaling, and security context. |
-| `extraObjects` | Escape hatch for arbitrary additional manifests (string or object, templated). |
+More agents, flows and tools are in [`examples/`](examples). For a real deployment, install the [Helm chart](docs/helm.md) on your cluster.
 
-[`chart/values.example.yaml`](chart/values.example.yaml) is a full working example — Anthropic as the inference provider, an Atlassian MCP server, Bitbucket/git JS tool config, the `reviewer` agent from the [Examples](#examples) above, and a `pr_review_flow` flow that checks out the pull request before reviewing it — copy it and adjust as needed.
+## Documentation
 
-## Logging
-
-Beaver writes one JSON object per line to stdout. Data is in fields, and everything logged while handling a request, a CLI command or the boot carries the context's attributes under `ctx`:
-
-```json
-{"channel":"flow","ctx":{"trace_id":"5b0c…"},"flow":"review","level":"INFO","message":"Flow started","timestamp":"2026-10-31T10:00:00.123456Z"}
-{"channel":"access log","client_ip":"10.0.0.7","ctx":{"trace_id":"5b0c…"},"latency_ms":6.52,"level":"INFO","method":"POST","path":"/hooks/review","response_size":48,"status":200,"timestamp":"2026-10-31T10:00:00.130000Z","user_agent":"curl/8.4","version":"HTTP/1.1"}
-```
-
-| Setting | Default | |
-|---|---|---|
-| `logger.level` (`LOGGER__LEVEL`) | `info` | `trace`, `debug`, `info`, `warn`, `error` or `off`, for Beaver and its dependencies |
-| `logger.provider` (`LOGGER__PROVIDER`) | `stdout` | Where logs go |
-
-Tokens, query strings and request bodies are never logged; prompts, agent outputs and variable values only at `debug`.
-
-## File system
-
-Everything agents and flows do with files (file and git tools, `javascript_run`, JS tool `fs`, output redirection, flow chroots) goes through one file system. Each conversation only sees its chroot, `/` is its root.
-
-| Setting | Default | |
-|---|---|---|
-| `file_system.provider` (`FILE_SYSTEM__PROVIDER`) | `disk` | `disk`, or `memory` (lost on exit, git tools don't work) |
-| `file_system.disk.root` (`FILE_SYSTEM__DISK__ROOT`) | `/tmp` | Host directory that holds all chroots. It must exist. |
-
-The disk provider can't leave its root: paths with `..` and symlinks leading outside, absolute ones included, are refused. Symlinks it creates are stored relative. Agent and flow definitions and JS tools are read from their own paths, not from the file system.
-
-## Security
-The AI tools out there are powerful but many of them are scary dangerous. With Beaver I took a different attempt restricting what an agent can do by default. 
-
-- **Explicit allow-listing** — an agent can only call tools matching its own `spec.tools.allow` rules and none of its `spec.tools.deny` rules; nothing is available by default, and subagents are checked against their own rules. Rules are validated when the agent loads.
-- **Chroot-confined** — all file access goes through the [file system](#file-system), which can't leave `file_system.disk.root`. Each conversation is narrowed to its chroot: paths are resolved through symlinks and rejected if they lead outside, deleting removes symlinks instead of their targets, and the chroot itself can't be deleted.
-- **Contained git** — git tools only open repositories whose git directory, worktree and objects lie inside the repository directory (no `gitdir:` files or `core.worktree` pointing elsewhere, no alternates or config includes), ignore system and global git config, check out symlinks as regular files and clone only from `https://`, `ssh://` or `user@host:path` URLs.
-- **Confined scripts** — `javascript_run` only reads, writes and imports files inside the chroot and has no `fetch` unless its allow rule has `web:<regex>` scopes.
-- **Scoped JavaScript tools** — each JS tool declares in its `package.json` what it may access (see [`examples/tools/bitbucket_pr/package.json`](examples/tools/bitbucket_pr/package.json) or [`examples/tools/slack/package.json`](examples/tools/slack/package.json)); everything else is rejected, and without scopes a tool has neither `fetch` nor `fs`. Tools only import modules from their own directory, and file access is always confined to the calling agent's chroot:
-
-  ```json
-  "scopes": {
-    "fetch": [
-      { "url": "^https://api\\.example\\.com/.*$", "methods": ["GET", "POST"] }
-    ],
-    "filesystem": [
-      { "path": "/reports", "operations": ["read", "write"] }
-    ]
-  }
-  ```
-
-  A `url` or `path` starting with `^` is a regex, otherwise a literal; a literal path also covers everything below it. Without `methods` any method is allowed. `fs` offers the same functions as in [`javascript_run`](#working-with-large-data), with paths in the chroot. `javascript_run` itself may read and write the whole chroot.
-
-## Architecture
-
-A Rust workspace: `domains` (core logic) → `adapters` (inference, tools, config) → `app` (wiring), exposed via `platforms/cli` and `platforms/webhook`.
-
-## Deployment
-
-Docker images are published to `ghcr.io/pndrik/beaver` on tag push (multi-arch: amd64/arm64). A Helm chart is available in [`chart/`](chart).
+- [Configuration](docs/configuration.md) — every setting, inference providers, file system, logging, example configurations
+- [CLI](docs/cli.md) — commands, conversations and debugging agents locally
+- [Agents](docs/agents.md) — the agent spec, tool rules, compression, subagents
+- [Flows](docs/flows.md) — the flow spec, webhooks, arguments, contexts, variables, flow control, templates
+- [Tools](docs/tools.md) — embedded tools, `javascript_run`, JavaScript tool packages, MCP servers, output redirection
+- [Security](docs/security.md) — the security model
+- [Deployment](docs/deployment.md) — Docker image and building from source
+- [Helm chart](docs/helm.md) — install Beaver on Kubernetes and manage agents and flows as Helm values
 
 ## License
 
