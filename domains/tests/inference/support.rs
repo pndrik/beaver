@@ -13,8 +13,7 @@ use app_domains::{
     inference::{
         Inference,
         models::{
-            Agent, AgentCacheLevel, AgentInference, Compression, Conversation, Message, Model,
-            Options,
+            Agent, AgentInference, CacheLevel, Compression, Conversation, Message, Model, Options,
         },
     },
     tools::{Tools, models::ToolPermission},
@@ -37,21 +36,21 @@ pub fn compression(tokens: Option<u64>, messages: Option<u64>) -> Compression {
     }
 }
 
-fn agent(compression: Compression, options: Options) -> Agent {
+fn agent(compression: Compression, options: Options, allow: &str) -> Agent {
     let mut agent = Agent::new(
         "coder".to_string(),
         "Coder".to_string(),
         String::new(),
-        String::new(),
+        "You help.".to_string(),
         AgentInference {
             model: Model::ClaudeOpus5,
-            caching: AgentCacheLevel::default(),
+            caching: CacheLevel::default(),
             options,
             compression,
         },
     );
-    agent.tools.permissions = vec![ToolPermission {
-        name: "echo".to_string(),
+    agent.spec.tools.allow = vec![ToolPermission {
+        name: allow.to_string(),
         scopes: vec![],
     }];
     agent
@@ -86,10 +85,16 @@ pub async fn fixture(compression: Compression) -> Fixture {
 /// A conversation with the agent `coder`, answered by the scripted provider
 /// and allowed to call `echo`.
 pub async fn fixture_with_options(compression: Compression, options: Options) -> Fixture {
+    fixture_allowing(compression, options, "echo").await
+}
+
+/// Like [`fixture_with_options`], but the agent may call the tools matching
+/// the allow rule `allow`.
+pub async fn fixture_allowing(compression: Compression, options: Options, allow: &str) -> Fixture {
     let ctx = context();
     let scripted = Arc::new(Scripted::new());
     let inference = Inference::new(
-        Arc::new(agent::Memory::new(vec![agent(compression, options)])),
+        Arc::new(agent::Memory::new(vec![agent(compression, options, allow)])),
         vec![scripted.clone()],
     )
     .unwrap();

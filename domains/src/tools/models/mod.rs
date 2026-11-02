@@ -13,5 +13,5 @@ pub use schema::*;
 mod tool;
 pub use tool::*;
 
-mod tools_configuration;
-pub use tools_configuration::*;
+mod configuration;
+pub use configuration::*;

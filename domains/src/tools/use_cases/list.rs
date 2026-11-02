@@ -33,7 +33,7 @@ impl Tools {
                     .list(ctx)
                     .await?
                     .into_iter()
-                    .filter(|tool| configuration.has_tool_permission(&tool.name))
+                    .filter(|tool| configuration.permission(&tool.name).is_some())
                     .map(|tool| {
                         if configuration.redirect_output {
                             redirect::with_redirect(tool)
@@ -47,7 +47,7 @@ impl Tools {
             subagent::tools(ctx)
                 .await?
                 .into_iter()
-                .filter(|tool| configuration.has_tool_permission(&tool.name)),
+                .filter(|tool| configuration.permission(&tool.name).is_some()),
         );
 
         Ok(tools_found)

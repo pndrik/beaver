@@ -134,7 +134,7 @@ impl Tool for Write {
                 Validation,
                 "file_not_read",
                 format!(
-                    "File '{path}' was never or changed since it was last read. Read it before editing lines."
+                    "File '{path}' was not read or has changed since it was last read. Read it before editing lines."
                 ),
                 ctx.clone()
             ));

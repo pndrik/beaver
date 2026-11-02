@@ -237,6 +237,22 @@ async fn tool_result_is_added_to_an_existing_conversation() {
 }
 
 #[tokio::test]
+async fn tool_steps_ignore_the_rules_of_the_context_agent() {
+    let run = run(
+        "    c: { agent: guarded }",
+        r#"
+    - { name: tool_step, context: c, type: tool, arguments: { tool: echo, arguments: { text: "hi" } } }
+    - { name: agent_step, context: c, type: agent, arguments: { prompt: "{{ Contexts.c.last().content }}" } }
+"#,
+    )
+    .await;
+
+    run.result.unwrap();
+    assert!(run.calls[0].prompt.ends_with("echo hi @ /"));
+    assert!(!run.calls[0].tools.contains(&"echo".to_string()));
+}
+
+#[tokio::test]
 async fn tool_step_output_reaches_the_conversation_of_the_context() {
     let run = run(
         r#"    c: { agent: coder, chroot: { path: "work", create: true } }"#,

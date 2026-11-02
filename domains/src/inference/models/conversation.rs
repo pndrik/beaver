@@ -139,7 +139,7 @@ impl Conversation {
     }
 
     pub fn needs_compression(&self) -> bool {
-        let compression = &self.agent.inference.compression;
+        let compression = &self.agent.spec.inference.compression;
         if !compression.enabled {
             return false;
         }

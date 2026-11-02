@@ -21,11 +21,12 @@ impl Inference {
         chroot: Chroot,
     ) -> Result<Conversation, AppError> {
         let agent = self.agent_provider.get(ctx, agent_name).await?;
+        agent.validate(ctx)?;
 
-        let tools_permitted = tools.list_permitted(ctx, &agent.tools).await?;
+        let tools_permitted = tools.list_permitted(ctx, &agent.spec.tools).await?;
 
         let system_prompt = Message::system(
-            PROMPT.to_string() + "\n\n---\n# Harness\n" + &agent.prompt,
+            PROMPT.to_string() + "\n\n---\n# Harness\n" + &agent.spec.prompt,
             &agent,
         );
         Ok(Conversation::new(

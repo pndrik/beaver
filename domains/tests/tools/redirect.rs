@@ -18,9 +18,7 @@ use app_domains::{
     },
     inference::{
         Inference,
-        models::{
-            Agent, AgentCacheLevel, AgentInference, Compression, Conversation, Model, Options,
-        },
+        models::{Agent, AgentInference, CacheLevel, Compression, Conversation, Model, Options},
     },
     tools::{
         Tools,
@@ -121,19 +119,19 @@ async fn fixture(redirect_output: bool) -> Fixture {
         "agent".to_string(),
         "agent".to_string(),
         String::new(),
-        String::new(),
+        "You help.".to_string(),
         AgentInference {
             model: Model::ClaudeOpus5,
-            caching: AgentCacheLevel::default(),
+            caching: CacheLevel::default(),
             options: Options::default(),
             compression: Compression::default(),
         },
     );
-    agent.tools.permissions = vec![ToolPermission {
+    agent.spec.tools.allow = vec![ToolPermission {
         name: "^.*$".to_string(),
         scopes: vec![],
     }];
-    agent.tools.redirect_output = redirect_output;
+    agent.spec.tools.redirect_output = redirect_output;
 
     let inference = Inference::new(
         Arc::new(agent::Memory::new(vec![agent])),

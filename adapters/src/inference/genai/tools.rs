@@ -16,7 +16,7 @@ impl GenAi {
         ctx: &AppContext,
         conversation: &Conversation,
     ) -> Result<Vec<Tool>, AppError> {
-        let caching = &conversation.agent().inference.caching;
+        let caching = &conversation.agent().spec.inference.caching;
         let cache_control =
             convert_cache_control(caching.system.as_ref().unwrap_or(&caching.default));
 

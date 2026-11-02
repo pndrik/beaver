@@ -16,7 +16,7 @@ use crate::{configuration::ConfigurationMap, context::ContextStandard, file_syst
 use app_domains::{
     core::models::{AppContext, AppError, ErrorKind, file::Chroot},
     inference::models::{
-        Agent, AgentCacheLevel, AgentInference, Compression, Conversation, Message, Model, Options,
+        Agent, AgentInference, CacheLevel, Compression, Conversation, Message, Model, Options,
     },
     tools::{
         models::{Call, CallValue, ToolPermission},
@@ -81,10 +81,10 @@ impl Fixture {
             "agent".to_string(),
             "agent".to_string(),
             String::new(),
-            String::new(),
+            "You help.".to_string(),
             AgentInference {
                 model: Model::ClaudeOpus5,
-                caching: AgentCacheLevel::default(),
+                caching: CacheLevel::default(),
                 options: Options::default(),
                 compression: Compression::default(),
             },
@@ -465,7 +465,7 @@ async fn a_line_edit_of_an_unread_file_fails_and_keeps_it() {
     assert_eq!(error.translation_key, "file_not_read");
     assert_eq!(
         error.internal_message,
-        "File '/data/a.txt' has never or changed since it was last read. Read it before editing lines."
+        "File '/data/a.txt' was not read or has changed since it was last read. Read it before editing lines."
     );
     assert_eq!(
         fs::read(fixture.root().join("data/a.txt")).unwrap(),
@@ -536,7 +536,7 @@ async fn a_line_edit_after_an_external_change_fails() {
     assert_eq!(error.translation_key, "file_not_read");
     assert_eq!(
         error.internal_message,
-        "File '/data/a.txt' has never or changed since it was last read. Read it before editing lines."
+        "File '/data/a.txt' was not read or has changed since it was last read. Read it before editing lines."
     );
     assert_eq!(
         fs::read_to_string(fixture.root().join("data/a.txt")).unwrap(),

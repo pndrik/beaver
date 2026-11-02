@@ -9,7 +9,9 @@ use app_domains::{
     inference::{models::Agent, traits::AgentProvider},
 };
 
-/// Serves a fixed list of agents held in memory.
+#[cfg(test)]
+mod tests;
+
 pub struct Memory {
     agents: Vec<Agent>,
 }
@@ -26,15 +28,18 @@ impl AgentProvider for Memory {
         Ok(())
     }
 
-    async fn list(&self, _ctx: &AppContext) -> Result<Vec<Agent>, AppError> {
+    async fn list(&self, ctx: &AppContext) -> Result<Vec<Agent>, AppError> {
+        for agent in &self.agents {
+            agent.validate(ctx)?;
+        }
         Ok(self.agents.clone())
     }
 
     async fn get(&self, ctx: &AppContext, name: &str) -> Result<Agent, AppError> {
-        self.agents
+        let agent = self
+            .agents
             .iter()
             .find(|agent| agent.metadata.name == name)
-            .cloned()
             .ok_or_else(|| {
                 app_error!(
                     NotFound,
@@ -42,6 +47,8 @@ impl AgentProvider for Memory {
                     &format!("Agent '{name}' not found."),
                     ctx.clone()
                 )
-            })
+            })?;
+        agent.validate(ctx)?;
+        Ok(agent.clone())
     }
 }

@@ -43,7 +43,7 @@ impl GenAi {
             .collect();
 
         if let Some(cache_level) =
-            convert_cache_control(&conversation.agent().inference.caching.default)
+            convert_cache_control(&conversation.agent().spec.inference.caching.default)
             && let Some(last) = messages.last_mut()
         {
             last.options = Some(cache_level.into());

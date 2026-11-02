@@ -3,6 +3,8 @@
 
 //! Tests for the tools domain.
 
+mod call;
+mod permission;
 mod redirect;
 mod sandbox;
 mod schema;

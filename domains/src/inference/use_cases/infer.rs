@@ -51,7 +51,7 @@ impl Inference {
                 conversation.agent().model(),
             )
             .await?;
-            let options = conversation.agent().inference.options.clone();
+            let options = conversation.agent().spec.inference.options.clone();
 
             for _ in 0..MAX_INFERENCE_TOOL_ITERATIONS {
                 self.compress(ctx, conversation).await?;

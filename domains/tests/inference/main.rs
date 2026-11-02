@@ -3,6 +3,7 @@
 
 //! Tests for the inference domain, wired with offline adapters.
 
+mod agent;
 mod support;
 
 use std::collections::BTreeMap;
@@ -10,7 +11,7 @@ use std::collections::BTreeMap;
 use app_domains::inference::models::{
     AgentInference, Compression, ConversationValue, Message, Model, Options,
 };
-use support::{compression, fixture, fixture_with_options};
+use support::{compression, fixture, fixture_allowing, fixture_with_options};
 
 fn summaries(messages: &[Message]) -> Vec<&str> {
     messages
@@ -199,6 +200,25 @@ async fn a_new_summary_includes_the_previous_one() {
             .starts_with(&format!("[summary]: {}", all[0]))
     );
     assert_eq!(calls[4].history, ["summary", "user"]);
+}
+
+#[tokio::test]
+async fn the_summarizer_gets_no_tools() {
+    let mut fixture =
+        fixture_allowing(compression(None, Some(3)), Options::default(), "^.*$").await;
+    fixture.say("one").await;
+    fixture.say("two").await;
+
+    let calls = fixture.scripted.calls();
+    assert!(calls[0].tools.contains(&"echo".to_string()));
+    assert!(calls[0].tools.contains(&"subagent_invoke".to_string()));
+    assert!(
+        calls[1]
+            .system_prompt
+            .contains("You compress a conversation")
+    );
+    assert_eq!(calls[1].tools, [] as [String; 0]);
+    assert_eq!(calls[2].tools, calls[0].tools);
 }
 
 #[tokio::test]

@@ -47,13 +47,13 @@ impl Inference {
             return Ok(());
         }
 
-        let compression = conversation.agent().inference.compression.clone();
+        let compression = conversation.agent().spec.inference.compression.clone();
         let mut agent = conversation.agent().clone();
         if let Some(model) = compression.model {
-            agent.inference.model = model;
+            agent.spec.inference.model = model;
         }
-        agent.inference.compression = Compression::default();
-        agent.tools = ToolsConfiguration::default();
+        agent.spec.inference.compression = Compression::default();
+        agent.spec.tools = ToolsConfiguration::default();
 
         let context = conversation.context();
         let user_message = transcript(&context[..context.len() - 1]);
@@ -86,7 +86,7 @@ impl Inference {
             find_inference_provider(ctx, &self.inference_providers, summarizer.agent().model())
                 .await
                 .map_err(|e| failed(&e.internal_message))?;
-        let options = summarizer.agent().inference.options.clone();
+        let options = summarizer.agent().spec.inference.options.clone();
         provider
             .infer(ctx, &options, &mut summarizer)
             .await

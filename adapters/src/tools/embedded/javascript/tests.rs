@@ -12,7 +12,7 @@ use crate::{configuration::ConfigurationMap, tools::sandbox::Boa};
 use app_domains::{
     core::models::{AppContext, AppError, file::Chroot},
     inference::models::{
-        Agent, AgentCacheLevel, AgentInference, Compression, Conversation, Message, Model, Options,
+        Agent, AgentInference, CacheLevel, Compression, Conversation, Message, Model, Options,
     },
     tools::{
         models::{Call, CallValue, ToolPermission},
@@ -32,10 +32,10 @@ async fn conversation(ctx: &AppContext, chroot: &TempDir) -> Conversation {
         "agent".to_string(),
         "agent".to_string(),
         String::new(),
-        String::new(),
+        "You help.".to_string(),
         AgentInference {
             model: Model::ClaudeOpus5,
-            caching: AgentCacheLevel::default(),
+            caching: CacheLevel::default(),
             options: Options::default(),
             compression: Compression::default(),
         },

@@ -8,7 +8,7 @@ use app_domains::{
     core::models::{AppContext, AppError},
 };
 
-pub(super) fn list_directories(ctx: &AppContext, path: &str) -> Result<Vec<String>, AppError> {
+pub(super) fn list_yaml_files(ctx: &AppContext, path: &str) -> Result<Vec<String>, AppError> {
     Ok(fs::read_dir(path)
         .map_err(|_| {
             app_error!(
@@ -20,7 +20,7 @@ pub(super) fn list_directories(ctx: &AppContext, path: &str) -> Result<Vec<Strin
         })?
         .filter_map(std::result::Result::ok)
         .map(|e| e.path())
-        .filter(|p| p.is_dir() || (p.is_file() && p.extension().is_some_and(|ext| ext == "yaml")))
+        .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "yaml"))
         .map(|p| p.display().to_string())
         .collect())
 }

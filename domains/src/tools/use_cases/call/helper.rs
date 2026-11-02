@@ -19,25 +19,29 @@ pub(super) fn permission(
     agent: &Agent,
     call: &Call,
 ) -> Result<ToolPermission, AppError> {
-    agent
-        .tools
-        .get_permission_for_tool(&call.name)
-        .ok_or_else(|| {
-            warn!(
-                channel = "audit",
-                object = "tool",
-                action = "call_denied",
-                agent = %agent.metadata.name,
-                tool = %call.name,
-                "No permission to access tool"
-            );
-            app_error!(
-                Unauthorized,
-                "tool_permission_denied",
-                &format!("Agent does not have permission to call tool: {}", call.name),
-                ctx.clone()
-            )
-        })
+    let tools = &agent.spec.tools;
+    tools.permission(&call.name).cloned().ok_or_else(|| {
+        let reason = if tools.is_denied(&call.name) {
+            "denied"
+        } else {
+            "not_allowed"
+        };
+        warn!(
+            channel = "audit",
+            object = "tool",
+            action = "call_denied",
+            agent = %agent.metadata.name,
+            tool = %call.name,
+            reason,
+            "No permission to access tool"
+        );
+        app_error!(
+            Unauthorized,
+            "tool_permission_denied",
+            &format!("Agent does not have permission to call tool: {}", call.name),
+            ctx.clone()
+        )
+    })
 }
 
 pub(super) fn redirect_allowed(
@@ -45,7 +49,7 @@ pub(super) fn redirect_allowed(
     agent: &Agent,
     call: &Call,
 ) -> Result<(), AppError> {
-    if agent.tools.redirect_output {
+    if agent.spec.tools.redirect_output {
         return Ok(());
     }
 

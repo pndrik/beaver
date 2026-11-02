@@ -8,6 +8,7 @@ use super::Model;
 /// Summarizes the conversation once the maximum of `tokens` or `messages` is
 /// reached, whichever comes first.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Compression {
     #[serde(default)]
     pub enabled: bool,

@@ -32,19 +32,40 @@ There's a few examples in [`examples/`](examples) and [`chart/values.example.yam
 ### Agent definition
 
 ```yaml
+version: 1
 metadata:
   name: reviewer
   display_name: Reviewer
-  model:
-    name: claude-fable-5
-permissions:
+  description: Reviews pull requests and leaves comments.
+spec:
+  inference:
+    model: claude-fable-5
   tools:
-    - name: js_bitbucket_pr_get
-    - name: js_bitbucket_pr_diff
-    - name: js_bitbucket_pr_comment
-prompt: |
-  Review this pull request's diff and leave feedback as comments.
+    allow:
+      - name: ^js_bitbucket_pr_.*$
+      - name: ^file_.*$
+        scopes: [/repo]
+    deny:
+      - name: js_bitbucket_pr_approve
+  prompt: |
+    Review this pull request's diff and leave feedback as comments.
 ```
+
+An agent is one file, `<agents.path>/<name>.yaml`, and `metadata.name` must be exactly `<name>`. Other extensions (`.yml`, `.YAML`) and directories are ignored.
+
+| Key | |
+|---|---|
+| `version` | Required, must be `1`. |
+| `metadata.name`, `display_name`, `description` | Required. Shown by the CLI agent list and `subagent_list`. |
+| `spec.inference` | Required: `model`, and optionally `caching` (`system`, `default`), `options` (`max_tokens`, `temperature`, `nucleus`, `reasoning_effort`, `stop_sequences`) and `compression` (`enabled`, `model`, `prompt`, `tokens`, `messages`). |
+| `spec.tools.allow` | Rules `{ name, scopes }` for the tools the agent may call. Nothing is allowed by default. |
+| `spec.tools.deny` | Rules `{ name }` for tools the agent may never call, even if an allow rule matches. |
+| `spec.tools.redirect_output` | See [output redirection](#working-with-large-data), default `false`. |
+| `spec.prompt` | Required, not blank. |
+
+A rule `name` is either a literal, matching only the tool with exactly that name, or a pattern written `^...$`, a regex that has to match the whole tool name (`^git_.*|evil$` means "`git_…` or `evil`"). A tool is offered and can be called if no deny rule matches it and an allow rule does; the first matching allow rule in file order gives its `scopes`. A denied or unlisted call fails with `tool_permission_denied` and logs a `call_denied` audit warning.
+
+The whole file is checked when it loads, and an invalid agent is never started. Unknown keys (including the old flat layout and `tools.permissions`) fail to parse. Empty names, patterns without the closing `$`, invalid regexes, literals containing regex syntax (`git_.*`), empty scopes, a blank prompt or a name mismatch fail with `agent_invalid`, naming the location, e.g. `Agent 'coder' is invalid: spec.tools.deny[1]: name '^git_' must end with '$'`.
 
 ### Flow definition
 
@@ -148,7 +169,7 @@ A missing value, at any depth, renders as `<NULL>` and logs a warning naming the
 
 Tool outputs land in the conversation and use up the context window. Two features keep large data out of it.
 
-**Output redirection.** With `tools.redirect_output: true` in an agent, every provider tool it is offered gets an optional `harness_redirect_to_file` argument. The full output is written to that absolute path in the chroot, replacing the file, and the tool message only shows the name, all arguments and a receipt: `Output written to '/out/prs.json' (48213 bytes, 912 lines)`. The parent directory must exist, and the path must not contain `..` or lead outside the chroot through a symlink. A failing tool writes nothing. A tool argument of the same name is replaced. Subagent tools are not redirected, flow `tool` steps drop the argument and write nothing. Without `redirect_output`, using the argument fails.
+**Output redirection.** With `spec.tools.redirect_output: true` in an agent, every provider tool it is offered gets an optional `harness_redirect_to_file` argument. The full output is written to that absolute path in the chroot, replacing the file, and the tool message only shows the name, all arguments and a receipt: `Output written to '/out/prs.json' (48213 bytes, 912 lines)`. The parent directory must exist, and the path must not contain `..` or lead outside the chroot through a symlink. A failing tool writes nothing. A tool argument of the same name is replaced. Subagent tools are not redirected, flow `tool` steps drop the argument and write nothing. Without `redirect_output`, using the argument fails.
 
 **`javascript_run`.** An embedded tool that runs JavaScript the agent writes, so it can filter and aggregate data in code. Pass exactly one of:
 
@@ -162,18 +183,19 @@ The result is every `console.*` call as a line, followed by the value: strings a
 | `fs.readFile(path)` | Content of a file as a string. |
 | `fs.readDir(path)` | Entry names, directories end with `/`. Symlinks are not followed. |
 | `fs.writeFile(path, content)`, `fs.appendFile(path, content)` | Replace or append to a file, the parent directory must exist. |
-| `fetch(url, options)` | Only defined if the permission has `web:` scopes. |
+| `fetch(url, options)` | Only defined if the allow rule has `web:` scopes. |
 
 Imports only resolve to files in the chroot: absolute specifiers start at its root, relative ones at the importing module, packages (`"lodash"`) can't be imported. Paths that escape the chroot, through `..` or symlinks, throw.
 
-Web access is off by default. Each `web:<regex>` scope of the `javascript_run` permission allows any method on URLs the regex matches (as written, anchor it yourself). Redirects are checked against the same regexes. Other scopes are ignored and an invalid regex fails the tool.
+Web access is off by default. Each `web:<regex>` scope of the allow rule for `javascript_run` allows any method on URLs the regex matches (as written, anchor it yourself). Redirects are checked against the same regexes. Other scopes are ignored and an invalid regex fails the tool.
 
 ```yaml
-tools:
-  redirect_output: true
-  permissions:
-    - name: javascript_run
-      scopes: ['web:^https://api\.github\.com/']
+spec:
+  tools:
+    redirect_output: true
+    allow:
+      - name: javascript_run
+        scopes: ['web:^https://api\.github\.com/']
 ```
 
 Scripts are stopped after `tools.configuration.javascript.loop_iteration_limit` loop iterations (default `100000000`) or at `recursion_limit` nested calls (default `512`). Boa has no timeout, so a script blocked in a single long operation runs until it finishes. See [`examples/agents/analyst.yaml`](examples/agents/analyst.yaml).
@@ -229,10 +251,10 @@ The disk provider can't leave its root: paths with `..` and symlinks leading out
 ## Security
 The AI tools out there are powerful but many of them are scary dangerous. With Beaver I took a different attempt restricting what an agent can do by default. 
 
-- **Explicit allow-listing** — an agent can only call tools listed in its own `permissions.tools`; nothing is available by default.
+- **Explicit allow-listing** — an agent can only call tools matching its own `spec.tools.allow` rules and none of its `spec.tools.deny` rules; nothing is available by default, and subagents are checked against their own rules. Rules are validated when the agent loads.
 - **Chroot-confined** — all file access goes through the [file system](#file-system), which can't leave `file_system.disk.root`. Each conversation is narrowed to its chroot: paths are resolved through symlinks and rejected if they lead outside, deleting removes symlinks instead of their targets, and the chroot itself can't be deleted.
 - **Contained git** — git tools only open repositories whose git directory, worktree and objects lie inside the repository directory (no `gitdir:` files or `core.worktree` pointing elsewhere, no alternates or config includes), ignore system and global git config, check out symlinks as regular files and clone only from `https://`, `ssh://` or `user@host:path` URLs.
-- **Confined scripts** — `javascript_run` only reads, writes and imports files inside the chroot and has no `fetch` unless its permission has `web:<regex>` scopes.
+- **Confined scripts** — `javascript_run` only reads, writes and imports files inside the chroot and has no `fetch` unless its allow rule has `web:<regex>` scopes.
 - **Scoped JavaScript tools** — each JS tool declares in its `package.json` what it may access (see [`examples/tools/bitbucket_pr/package.json`](examples/tools/bitbucket_pr/package.json) or [`examples/tools/slack/package.json`](examples/tools/slack/package.json)); everything else is rejected, and without scopes a tool has neither `fetch` nor `fs`. Tools only import modules from their own directory, and file access is always confined to the calling agent's chroot:
 
   ```json

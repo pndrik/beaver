@@ -73,24 +73,32 @@ impl Message {
     }
 
     pub fn system(content: String, agent: &Agent) -> Self {
-        let caching = &agent.inference.caching;
+        let caching = &agent.spec.inference.caching;
         let cache_level = caching.system.as_ref().unwrap_or(&caching.default);
         Self::input(MessageType::System, content, cache_level)
     }
 
     pub fn user(content: String, agent: &Agent) -> Self {
-        Self::input(MessageType::User, content, &agent.inference.caching.default)
+        Self::input(
+            MessageType::User,
+            content,
+            &agent.spec.inference.caching.default,
+        )
     }
 
     pub fn tool(content: String, agent: &Agent) -> Self {
-        Self::input(MessageType::Tool, content, &agent.inference.caching.default)
+        Self::input(
+            MessageType::Tool,
+            content,
+            &agent.spec.inference.caching.default,
+        )
     }
 
     pub fn summary(content: String, agent: &Agent) -> Self {
         Self::input(
             MessageType::Summary,
             content,
-            &agent.inference.caching.default,
+            &agent.spec.inference.caching.default,
         )
     }
 
@@ -106,7 +114,7 @@ impl Message {
             content,
             tool_calls,
             usage,
-            cache_level: agent.inference.caching.default.clone(),
+            cache_level: agent.spec.inference.caching.default.clone(),
         })
     }
 

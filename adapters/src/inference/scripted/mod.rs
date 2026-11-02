@@ -26,6 +26,8 @@ pub struct ScriptedCall {
     pub prompt: String,
     /// Message names of the context, e.g. `["summary", "user", "assistant", "tool", "user"]`.
     pub history: Vec<String>,
+    /// Names of the tools offered to the model.
+    pub tools: Vec<String>,
 }
 
 /// Offline inference provider for every model: answers each prompt with
@@ -97,6 +99,11 @@ impl InferenceProvider for Scripted {
                 chroot: conversation.chroot().root().to_string(),
                 prompt: prompt.clone(),
                 history,
+                tools: conversation
+                    .tools()
+                    .iter()
+                    .map(|tool| tool.name.clone())
+                    .collect(),
             });
 
         let (content, tool_calls) = match scripted_tool_call(conversation.last()) {

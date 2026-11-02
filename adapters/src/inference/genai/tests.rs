@@ -7,7 +7,7 @@ use std::sync::Arc;
 use app_domains::{
     core::models::{AppContext, file::Chroot},
     inference::models::{
-        Agent, AgentCacheLevel, AgentInference, Compression, Conversation, Message, Model, Options,
+        Agent, AgentInference, CacheLevel, Compression, Conversation, Message, Model, Options,
         ReasoningEffort,
     },
 };
@@ -82,10 +82,10 @@ async fn the_system_prompt_is_sent_after_a_summary() {
         "coder".to_string(),
         "Coder".to_string(),
         String::new(),
-        String::new(),
+        "You help.".to_string(),
         AgentInference {
             model: Model::ClaudeOpus5,
-            caching: AgentCacheLevel::default(),
+            caching: CacheLevel::default(),
             options: Options::default(),
             compression: Compression::default(),
         },

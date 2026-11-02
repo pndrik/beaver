@@ -17,7 +17,7 @@ use app_domains::{
     flows::{Flows, models::Definition},
     inference::{
         Inference,
-        models::{Agent, AgentCacheLevel, AgentInference, Compression, Model, Options},
+        models::{Agent, AgentInference, CacheLevel, Compression, Model, Options},
     },
     tools::Tools,
 };
@@ -78,10 +78,10 @@ fn agent(name: &str) -> Agent {
         name.to_string(),
         name.to_string(),
         String::new(),
-        String::new(),
+        "You help.".to_string(),
         AgentInference {
             model: Model::ClaudeOpus5,
-            caching: AgentCacheLevel::default(),
+            caching: CacheLevel::default(),
             options: Options::default(),
             compression: Compression::default(),
         },
@@ -96,8 +96,16 @@ pub struct Fixture {
     pub file_system: Arc<file_system::Memory>,
 }
 
+/// An agent that may call everything except `echo`.
+fn guarded() -> Agent {
+    let mut agent = agent("guarded");
+    agent.spec.tools = yaml_serde::from_str("allow: [{ name: ^.*$ }]\ndeny: [{ name: echo }]")
+        .expect("valid rules");
+    agent
+}
+
 /// Knows the agents `coder`, `calculator` and `dispatcher` (as used by the
-/// examples), answers with the scripted provider and offers the
+/// examples) and `guarded`, answers with the scripted provider and offers the
 /// `echo` and `fail` tools. Files live in memory.
 pub fn fixture(ctx: &AppContext, flows: Vec<Definition>) -> Fixture {
     let file_system = Arc::new(file_system::Memory::new());
@@ -107,6 +115,7 @@ pub fn fixture(ctx: &AppContext, flows: Vec<Definition>) -> Fixture {
             agent("coder"),
             agent("calculator"),
             agent("dispatcher"),
+            guarded(),
         ])),
         vec![scripted.clone()],
     )

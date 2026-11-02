@@ -9,12 +9,16 @@ use app_domains::{
     inference::models::Agent,
 };
 
-pub(super) fn parse_agent(ctx: &AppContext, file_content: &str) -> Result<Agent, AppError> {
+pub(super) fn parse_agent(
+    ctx: &AppContext,
+    path: &str,
+    file_content: &str,
+) -> Result<Agent, AppError> {
     yaml_serde::from_str(file_content).map_err(|e| {
         app_error!(
             Internal,
             "configuration_load_failed",
-            &format!("Failed to parse agent file: {e}"),
+            &format!("Failed to parse agent file {path}: {e}"),
             ctx.clone()
         )
     })
