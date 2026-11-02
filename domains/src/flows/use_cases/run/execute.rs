@@ -7,7 +7,10 @@ use tracing::info;
 use super::chroot;
 use crate::{
     core::models::{AppContext, AppError},
-    flows::{Flows, models::FlowRun},
+    flows::{
+        Flows,
+        models::{FlowRun, Step},
+    },
     inference::Inference,
     tools::Tools,
 };
@@ -27,8 +30,10 @@ impl Flows {
 
             let result = async {
                 self.contexts(ctx, inference, tools, run).await?;
-                for step in &flow.spec.steps {
-                    self.step(ctx, step, inference, tools, run).await?;
+                for (index, step) in flow.spec.steps.iter().enumerate() {
+                    let position = Step::position(None, index);
+                    self.step(ctx, step, &position, inference, tools, run)
+                        .await?;
                 }
                 Ok::<(), AppError>(())
             }

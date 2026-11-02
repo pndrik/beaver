@@ -6,7 +6,7 @@ I built Beaver because I needed a secure and flexible way to automate repeated w
 
 ## Features
 
-- **Multi-Provider/-LLM** — Claude via the Anthropic API, plus GPT, Gemini, Qwen, Kimi, GLM and more via OpenCode Zen
+- **Multi-Provider/-LLM** — Anthropic, OpenAI, OpenCode Zen
 - **Pluggable Tools** — built-in file, git and JavaScript tools, your own sandboxed JavaScript tools, and MCP (Model Context Protocol) servers
 - **Agents & Flows as YAML** — no custom DSL, just YAML
 - **Webhook triggers** — start an AI workflow from any service that can send an HTTP request
@@ -56,8 +56,7 @@ spec:
       arguments:
         text: "{{ Body.text }}"
   steps:
-    - name: summarize
-      context: main
+    - context: main
       type: agent
       arguments:
         prompt: "{{ Arguments.text }}"
@@ -65,10 +64,6 @@ spec:
 
 ```yaml
 # local/configuration.yaml
-agents:
-  path: ./local/agents
-flows:
-  path: ./local/flows
 inference:
   providers:
     anthropic:

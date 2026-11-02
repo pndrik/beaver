@@ -29,7 +29,7 @@ Names of arguments, contexts, steps and variables must be identifiers (`^[A-Za-z
 | `spec.triggers.webhook.token` | required | The token callers must send. |
 | `spec.triggers.webhook.arguments` | `{}` | `<argument>: <template>`, maps the request to the flow's arguments. |
 | `spec.steps` | required | The steps, run in order. At least one. |
-| `steps[].name` | required | Step name, unique across the flow, loops included. |
+| `steps[].name` | — | Optional identifier, unique across the flow, loops included. Needed only to read a `flow` step's results as `Flows.<name>`. Logs and errors name unnamed steps by position, e.g. `steps[2]` or `steps[1].steps[0]` inside a loop. |
 | `steps[].type` | required | `agent`, `tool`, `loop`, `set` or `flow`. |
 | `steps[].context` | — | The context the step works in. Required for `agent` and `tool` steps, not allowed for the others. |
 | `steps[].when` | — | List of conditions. The step runs only if at least one is true. See [Flow control](#flow-control). |
@@ -56,7 +56,7 @@ Names of arguments, contexts, steps and variables must be identifiers (`^[A-Za-z
 Steps run in order, and the first failing step stops the flow. Every step has the same shape:
 
 ```yaml
-- name: <step_name>          # identifier, unique in the flow
+- name: <step_name>          # optional identifier, unique in the flow
   type: <type>               # agent, tool, loop, set or flow
   context: <context_name>    # only for agent and tool steps
   when:                      # optional, the step runs if any condition is true
@@ -76,22 +76,19 @@ Steps run in order, and the first failing step stops the flow. Every step has th
 One step of each type:
 
 ```yaml
-- name: review
-  type: agent
+- type: agent
   context: work
   arguments:
     prompt: "Review the code in /repo and list the problems you find."
 
-- name: clone
-  type: tool
+- type: tool
   context: work
   arguments:
     tool: git_clone
     scopes: [/repo]
     arguments: { url: "{{ Arguments.url }}", path: "/repo" }
 
-- name: retry
-  type: loop
+- type: loop
   arguments:
     max: 3
     until: [{ left: "{{ Variables.status }}", operator: "==", right: "ok" }]
@@ -99,8 +96,7 @@ One step of each type:
       - { name: attempt, type: agent, context: work, arguments: { prompt: "Try again. End with 'Status: ok' or 'Status: failed'." } }
       - { name: status_check, type: set, arguments: { status: { value: "{{ Contexts.work.last().content }}", extract: "Status: (\\w+)" } } }
 
-- name: result
-  type: set
+- type: set
   arguments:
     summary: { value: "{{ Contexts.work.last().content }}" }
 
@@ -217,7 +213,7 @@ The flow runs in the background after the `200`. Its result is not returned; a f
 
 ### Calling another flow
 
-A `flow` step runs another flow and waits for it, `arguments: { flow, arguments: { <argument>: <template> } }`. The called flow is loaded by name and doesn't need a webhook trigger. Its arguments are rendered as strings and checked like any other run. It runs with its own contexts, variables and chroot cleanup, and shares `Ctx` with the caller. When it finishes, its final variables are available as `Flows.<step>.<variable>`. When it fails, the step fails.
+A `flow` step runs another flow and waits for it, `arguments: { flow, arguments: { <argument>: <template> } }`. The called flow is loaded by name and doesn't need a webhook trigger. Its arguments are rendered as strings and checked like any other run. It runs with its own contexts, variables and chroot cleanup, and shares `Ctx` with the caller. When it finishes, its final variables are available as `Flows.<name>.<variable>`, where `<name>` is the step's name; an unnamed `flow` step stores nothing. When it fails, the step fails.
 
 Flow steps nest at most 8 levels deep, which also stops endless recursion. See [`examples/flows/pythagoras.yaml`](../examples/flows/pythagoras.yaml), which calls [`calculate.yaml`](../examples/flows/calculate.yaml) three times and combines the results.
 
@@ -255,8 +251,7 @@ A `set` step writes typed variables, `arguments: { <variable>: { value, type, ex
 All entries of one step are rendered against the values from before the step. Variables are visible as `Variables.<variable>` right away: to later steps, later loop iterations, `when` and `until`.
 
 ```yaml
-- name: count
-  type: set
+- type: set
   arguments:
     findings: { value: "{{ Contexts.work.last().content }}", type: number, extract: "Findings: (\\d+)", default: 1 }
 ```
@@ -276,8 +271,7 @@ Empty condition lists and unknown operators are rejected when the flow loads.
 A **`loop` step** takes `arguments: { steps, max, until }`. It runs `steps` in order, then checks `until`, and stops once a condition is true or after `max` iterations. Stopping at `max` logs a warning. `when` on the loop gates the whole loop; `when` on an inner step is checked in every iteration.
 
 ```yaml
-- name: refine
-  type: loop
+- type: loop
   arguments:
     max: 3
     until: [{ left: "{{ Variables.findings }}", operator: "==", right: "0" }]
@@ -300,7 +294,7 @@ Prompts, chroot paths, both sides of conditions, `set` values, `flow` step argum
 | `Variables.<variable>` | The variables written by `set` steps so far. |
 | `Contexts.<context>` | The messages of a context, `[{ type, agent, content, tool_calls, usage }]`, empty until its first step. `type` is `user`, `assistant`, `tool` or `summary`; `agent` is the agent's name on its own messages. |
 | `Contexts.<context>.last()` | The last message of a context. |
-| `Flows.<step>.<variable>` | The final variables of the flow called by a `flow` step. |
+| `Flows.<name>.<variable>` | The final variables of the flow called by the `flow` step named `<name>`. Unnamed `flow` steps aren't stored. |
 | `Ctx` | The request context, `{ trace_id }`. |
 | `Flow` | `{ name }` of the running flow. |
 

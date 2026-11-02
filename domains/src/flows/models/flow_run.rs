@@ -61,8 +61,10 @@ impl FlowRun {
     }
 
     pub(crate) fn called(&mut self, step: &Step, child: FlowRun) {
-        self.flows
-            .insert(step.name.clone(), Value::Object(child.variables));
+        if let Some(name) = &step.name {
+            self.flows
+                .insert(name.clone(), Value::Object(child.variables));
+        }
     }
 
     pub(crate) fn delete_when_finished(&mut self, chroot: file::Path) {
@@ -93,16 +95,16 @@ impl FlowRun {
             .expect("contexts are created when the run starts")
     }
 
-    pub(crate) fn step_message(&self, step: &Step, message: &str) -> String {
+    pub(crate) fn step_message(&self, label: &str, message: &str) -> String {
         format!(
             "Flow '{}' step '{}' {}",
-            self.flow.metadata.name, step.name, message
+            self.flow.metadata.name, label, message
         )
     }
 
-    pub(crate) fn failed(&self, step: &Step, mut err: AppError) -> AppError {
+    pub(crate) fn failed(&self, label: &str, mut err: AppError) -> AppError {
         err.internal_message =
-            self.step_message(step, &format!("failed: {}", err.internal_message));
+            self.step_message(label, &format!("failed: {}", err.internal_message));
         err
     }
 
@@ -111,6 +113,7 @@ impl FlowRun {
         ctx: &AppContext,
         engine: &(dyn TemplateEngine + Send + Sync),
         step: &Step,
+        label: &str,
     ) -> Result<(), AppError> {
         let Action::Set(arguments) = &step.action else {
             unreachable!("set runs set steps")
@@ -124,7 +127,7 @@ impl FlowRun {
                     let fallback = variable.fallback();
                     warn!(
                         flow = %self.flow.metadata.name,
-                        step = %step.name,
+                        step = %label,
                         variable = %name,
                         error = %err.internal_message,
                         fallback = %fallback,

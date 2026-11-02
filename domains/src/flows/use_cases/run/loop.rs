@@ -19,6 +19,7 @@ impl Flows {
         &'a self,
         ctx: &'a AppContext,
         step: &'a Step,
+        position: &'a str,
         inference: &'a Inference,
         tools: &'a Tools,
         run: &'a mut FlowRun,
@@ -31,15 +32,17 @@ impl Flows {
             let mut iterations = 0;
             loop {
                 iterations += 1;
-                for inner in &arguments.steps {
-                    self.step(ctx, inner, inference, tools, run).await?;
+                for (index, inner) in arguments.steps.iter().enumerate() {
+                    let inner_position = Step::position(Some(position), index);
+                    self.step(ctx, inner, &inner_position, inference, tools, run)
+                        .await?;
                 }
 
                 let values = run.template_values(ctx);
                 if arguments
                     .done(ctx, self.template_engine.as_ref(), &values)
                     .await
-                    .map_err(|err| run.failed(step, err))?
+                    .map_err(|err| run.failed(step.label(position), err))?
                 {
                     break;
                 }
@@ -47,7 +50,7 @@ impl Flows {
                 if iterations >= arguments.max {
                     warn!(
                         flow = %run.flow.metadata.name,
-                        step = %step.name,
+                        step = %step.label(position),
                         max = arguments.max,
                         "Loop stopped after max iterations"
                     );

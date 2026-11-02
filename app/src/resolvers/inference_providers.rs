@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use app_adapters::inference::{Anthropic, Zen};
+use app_adapters::inference::{Anthropic, OpenAI, Zen};
 use app_domains::{
     core::models::{AppContext, AppError},
     inference::traits::InferenceProvider,
@@ -37,6 +37,10 @@ pub async fn inference_providers(
 
     add_provider_if_enabled(ctx, &mut providers, "anthropic", |ctx| {
         Arc::new(Anthropic::new(ctx))
+    })
+    .await;
+    add_provider_if_enabled(ctx, &mut providers, "openai", |ctx| {
+        Arc::new(OpenAI::new(ctx))
     })
     .await;
     add_provider_if_enabled(ctx, &mut providers, "zen", |ctx| Arc::new(Zen::new(ctx))).await;

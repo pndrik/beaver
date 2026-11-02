@@ -1052,3 +1052,154 @@ async fn pythagoras_example_calls_the_calculate_example() {
         [] as [std::string::String; 0]
     );
 }
+
+#[tokio::test]
+async fn unnamed_steps_run_and_are_logged_by_position() {
+    let run = run(
+        CODER,
+        r#"
+    - { context: c, type: agent, arguments: { prompt: "x" } }
+    - { name: named, context: c, type: agent, arguments: { prompt: "{{ Contexts.c.last().content }}" } }
+    - { type: set, arguments: { v: { value: "abc", type: float, default: 1.5 } } }
+    - type: loop
+      when: [{ left: "{{ Variables.v }}", operator: "==", right: "1.5" }]
+      arguments:
+        max: 1
+        steps:
+          - { context: c, type: agent, arguments: { prompt: "{{ Contexts.c.last().content }}" } }
+    - when: [{ left: "{{ Arguments.title }}", operator: "==", right: "Other" }]
+      context: c
+      type: agent
+      arguments: { prompt: "never" }
+"#,
+    )
+    .await;
+
+    run.result.unwrap();
+    let prompts: Vec<&str> = run.calls.iter().map(|call| call.prompt.as_str()).collect();
+    assert_eq!(prompts, ["x", "reply 1: x", "reply 2: reply 1: x"]);
+    assert_eq!(run.calls[1].history, ["user", "assistant", "user"]);
+
+    for (message, step) in [
+        ("Step started", "steps[0]"),
+        ("Step finished", "steps[0]"),
+        ("Step started", "named"),
+        ("Step started", "steps[3].steps[0]"),
+        ("Step finished", "steps[3]"),
+        ("Step skipped", "steps[4]"),
+    ] {
+        assert!(step_logged(&run.logger, message, step), "{message} {step}");
+    }
+    assert!(!step_logged(&run.logger, "Step started", "steps[1]"));
+    assert!(run.logger.contains(
+        Level::WARN,
+        "Invalid variable, using default",
+        &[("step", "steps[2]"), ("variable", "v")]
+    ));
+    assert!(run.logger.contains(
+        Level::WARN,
+        "Loop stopped after max iterations",
+        &[("step", "steps[3]"), ("max", "1")]
+    ));
+}
+
+#[tokio::test]
+async fn unnamed_failing_steps_are_named_by_position() {
+    let top = run(
+        CODER,
+        r#"
+    - { context: c, type: tool, arguments: { tool: echo, arguments: { text: "hi" } } }
+    - { context: c, type: tool, arguments: { tool: fail } }
+    - { context: c, type: agent, arguments: { prompt: "never" } }
+"#,
+    )
+    .await;
+    let err = top.result.unwrap_err();
+    assert!(
+        err.internal_message
+            .starts_with("Flow 'test_flow' step 'steps[1]' failed: "),
+        "{}",
+        err.internal_message
+    );
+    assert!(top.calls.is_empty());
+
+    let nested = run(
+        CODER,
+        r#"
+    - { name: first, context: c, type: agent, arguments: { prompt: "x" } }
+    - type: loop
+      arguments:
+        steps:
+          - { context: c, type: agent, arguments: { prompt: "y" } }
+          - { context: c, type: tool, arguments: { tool: fail } }
+"#,
+    )
+    .await;
+    let err = nested.result.unwrap_err();
+    assert!(
+        err.internal_message
+            .starts_with("Flow 'test_flow' step 'steps[1].steps[1]' failed: "),
+        "{}",
+        err.internal_message
+    );
+    assert_eq!(nested.calls.len(), 2);
+}
+
+#[tokio::test]
+async fn unnamed_flow_step_runs_the_child_without_storing_its_variables() {
+    let run = execute(
+        flow(
+            "    p: { agent: coder }",
+            r#"
+    - { type: flow, arguments: { flow: child, arguments: { x: "{{ Arguments.n }}" } } }
+    - { context: p, type: agent, arguments: { prompt: "{{ Flows | length }}|{{ Flows.steps }}" } }
+"#,
+        ),
+        json!({"n": 21}),
+        vec![child()],
+        async |_, _| {},
+    )
+    .await;
+
+    run.result.unwrap();
+    let prompts: Vec<&str> = run.calls.iter().map(|call| call.prompt.as_str()).collect();
+    assert_eq!(prompts, ["child 21|<NULL>", "0|<NULL>"]);
+    assert!(run.logger.contains(
+        Level::INFO,
+        "Flow completed successfully",
+        &[("flow", "child")]
+    ));
+}
+
+#[tokio::test]
+async fn unnamed_flow_step_fails_with_the_child() {
+    let failing = definition(
+        "failing",
+        "    {}",
+        CODER,
+        "    - { context: c, type: tool, arguments: { tool: fail } }",
+    );
+    let run = execute(
+        flow(
+            CODER,
+            r#"
+    - { type: flow, arguments: { flow: failing } }
+    - { context: c, type: agent, arguments: { prompt: "never" } }
+"#,
+        ),
+        json!({}),
+        vec![failing],
+        async |_, _| {},
+    )
+    .await;
+
+    let err = run.result.unwrap_err();
+    assert!(
+        err.internal_message.starts_with(
+            "Flow 'test_flow' step 'steps[0]' failed: Flow 'failing' step 'steps[0]' failed"
+        ),
+        "{}",
+        err.internal_message
+    );
+    assert!(run.calls.is_empty());
+}

@@ -9,7 +9,7 @@ use genai::{
     resolver::{AuthData, Endpoint, ServiceTargetResolver},
 };
 
-use super::GenAi;
+use super::{GenAi, utils::with_trailing_slash};
 use app_domains::{
     app_error,
     core::models::{AppContext, AppError},
@@ -22,7 +22,7 @@ impl GenAi {
             .configuration()
             .get_string(ctx, &self.configuration_key_endpoint)
             .await?;
-        Ok(Endpoint::from_owned(endpoint))
+        Ok(Endpoint::from_owned(with_trailing_slash(endpoint)))
     }
 
     async fn get_apikey(&self, ctx: &AppContext) -> Result<String, AppError> {

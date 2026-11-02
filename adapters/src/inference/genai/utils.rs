@@ -5,6 +5,13 @@ use genai::chat::CacheControl;
 
 use app_domains::inference::models::MessageCacheLevel;
 
+pub(super) fn with_trailing_slash(mut endpoint: String) -> String {
+    if !endpoint.ends_with('/') {
+        endpoint.push('/');
+    }
+    endpoint
+}
+
 pub(super) fn convert_cache_control(cache_control: &MessageCacheLevel) -> Option<CacheControl> {
     match cache_control {
         MessageCacheLevel::Ephemeral5min => Some(CacheControl::Ephemeral5m),

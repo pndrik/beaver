@@ -43,7 +43,7 @@ impl Spec {
 
         let mut step_names = HashSet::new();
         let mut used_contexts = HashSet::new();
-        self.check_steps(ctx, &self.steps, &mut step_names, &mut used_contexts)?;
+        self.check_steps(ctx, &self.steps, None, &mut step_names, &mut used_contexts)?;
 
         if let Some(name) = self
             .contexts
@@ -59,21 +59,24 @@ impl Spec {
         Ok(())
     }
 
-    /// Validates `steps` and the steps nested in their loops.
     fn check_steps<'a>(
         &'a self,
         ctx: &AppContext,
         steps: &'a [Step],
+        parent: Option<&str>,
         step_names: &mut HashSet<&'a str>,
         used_contexts: &mut HashSet<&'a str>,
     ) -> Result<(), AppError> {
-        for step in steps {
-            step.validate(ctx)?;
+        for (index, step) in steps.iter().enumerate() {
+            let position = Step::position(parent, index);
+            step.validate(ctx, &position)?;
 
-            if !step_names.insert(step.name.as_str()) {
+            if let Some(name) = &step.name
+                && !step_names.insert(name.as_str())
+            {
                 return Err(invalid(
                     ctx,
-                    &format!("step name '{}' is used more than once", step.name),
+                    &format!("step name '{name}' is used more than once"),
                 ));
             }
 
@@ -81,14 +84,24 @@ impl Spec {
                 if !self.contexts.contains_key(context) {
                     return Err(invalid(
                         ctx,
-                        &format!("step '{}' uses unknown context '{}'", step.name, context),
+                        &format!(
+                            "step '{}' uses unknown context '{}'",
+                            step.label(&position),
+                            context
+                        ),
                     ));
                 }
                 used_contexts.insert(context.as_str());
             }
 
             if let Action::Loop(arguments) = &step.action {
-                self.check_steps(ctx, &arguments.steps, step_names, used_contexts)?;
+                self.check_steps(
+                    ctx,
+                    &arguments.steps,
+                    Some(&position),
+                    step_names,
+                    used_contexts,
+                )?;
             }
         }
         Ok(())

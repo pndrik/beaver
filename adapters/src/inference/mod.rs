@@ -7,6 +7,9 @@ pub use anthropic::*;
 mod genai;
 pub use genai::*;
 
+mod openai;
+pub use openai::*;
+
 mod scripted;
 pub use scripted::*;
 

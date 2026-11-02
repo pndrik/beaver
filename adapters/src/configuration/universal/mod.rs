@@ -171,3 +171,6 @@ impl Configuration for ConfigurationUniversal {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

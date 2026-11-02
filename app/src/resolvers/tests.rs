@@ -6,7 +6,7 @@ use std::sync::Arc;
 use app_adapters::{configuration::ConfigurationMap, context::ContextStandard};
 use app_domains::core::models::AppContext;
 
-use super::{file_system, logging};
+use super::{file_system, inference_providers, logging};
 
 fn context(provider: &str) -> AppContext {
     AppContext::new(Arc::new(ContextStandard::new(
@@ -62,4 +62,39 @@ async fn rejects_unknown_file_systems_and_missing_roots() {
         ("file_system.disk.root", "/does/not/exist"),
     ];
     assert!(file_system(&file_system_context(&missing)).await.is_err());
+}
+
+fn providers_context(enabled: &[(&str, bool)]) -> AppContext {
+    AppContext::new(Arc::new(ContextStandard::new(
+        "test".to_string(),
+        Arc::new(
+            enabled
+                .iter()
+                .map(|(provider, enabled)| {
+                    (format!("inference.providers.{provider}.enabled"), *enabled)
+                })
+                .collect::<ConfigurationMap>(),
+        ),
+    )))
+}
+
+#[tokio::test]
+async fn resolves_the_enabled_openai_provider() {
+    let ctx = providers_context(&[("anthropic", false), ("openai", true), ("zen", false)]);
+    assert_eq!(inference_providers(&ctx).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn resolves_no_disabled_or_unconfigured_providers() {
+    let disabled = providers_context(&[("anthropic", false), ("openai", false), ("zen", false)]);
+    assert!(inference_providers(&disabled).await.unwrap().is_empty());
+
+    let missing = providers_context(&[]);
+    assert!(inference_providers(&missing).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn resolves_every_enabled_provider() {
+    let ctx = providers_context(&[("anthropic", true), ("openai", true), ("zen", true)]);
+    assert_eq!(inference_providers(&ctx).await.unwrap().len(), 3);
 }

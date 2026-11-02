@@ -63,6 +63,9 @@ The sources are read again whenever Beaver looks up a value. Strings, numbers an
 | `inference.providers.anthropic.enabled` | `false` | Use the Anthropic API. |
 | `inference.providers.anthropic.endpoint` | `https://api.anthropic.com/v1/` | Base URL of the Anthropic API. |
 | `inference.providers.anthropic.apikey` | `""` | Anthropic API key. Environment variable `INFERENCE__PROVIDERS__ANTHROPIC__APIKEY`. |
+| `inference.providers.openai.enabled` | `false` | Use the OpenAI API. |
+| `inference.providers.openai.endpoint` | `https://api.openai.com/v1/` | Base URL of the OpenAI API, or of a proxy or OpenAI-compatible gateway. A missing trailing `/` is added. |
+| `inference.providers.openai.apikey` | `""` | OpenAI API key. Environment variable `INFERENCE__PROVIDERS__OPENAI__APIKEY`. |
 | `inference.providers.zen.enabled` | `false` | Use [OpenCode Zen](https://opencode.ai/zen). |
 | `inference.providers.zen.endpoint` | `https://opencode.ai/zen/v1/` | Base URL of the Zen API. |
 | `inference.providers.zen.apikey` | `""` | Zen API key. Environment variable `INFERENCE__PROVIDERS__ZEN__APIKEY`. |
@@ -108,7 +111,7 @@ The sources are read again whenever Beaver looks up a value. Strings, numbers an
 
 An agent names a model in `spec.inference.model`. The id must be one Beaver knows, listed in [`domains/src/inference/models/model.rs`](../domains/src/inference/models/model.rs); any other id fails the agent with `unknown model: <id>`.
 
-On every inference call Beaver asks the enabled providers in a fixed order, Anthropic first, then Zen. Each one lists its models through its `/models` endpoint, and the first provider whose list contains the model serves the call. If none does, the call fails with `No inference provider found for model`. A provider that is enabled but can't list its models (wrong key, no network) fails the call, so only enable providers you have a key for.
+On every inference call Beaver asks the enabled providers in a fixed order: Anthropic, OpenAI, then Zen. Each one lists its models through its `/models` endpoint, and the first provider whose list contains the model serves the call. If none does, the call fails with `No inference provider found for model`. A provider that is enabled but can't list its models (wrong key, no network) fails the call, so only enable providers you have a key for.
 
 ## File system
 
@@ -139,10 +142,6 @@ Each example is a complete `configuration.yaml`. API keys can stay out of the fi
 
 ```yaml
 # configuration.yaml
-agents:
-  path: /etc/beaver/agents
-flows:
-  path: /etc/beaver/flows
 inference:
   providers:
     anthropic:
@@ -150,12 +149,23 @@ inference:
       apikey: "<your_anthropic_api_key>"
 ```
 
+### OpenAI
+
+```yaml
+# configuration.yaml
+inference:
+  providers:
+    openai:
+      enabled: true
+      apikey: "<your_openai_api_key>"
+```
+
+GPT models such as `gpt-5.5` use the Responses API, other models Chat Completions.
+
 ### OpenCode Zen
 
 ```yaml
 # configuration.yaml
-agents:
-  path: /etc/beaver/agents
 inference:
   providers:
     zen:
@@ -163,14 +173,12 @@ inference:
       apikey: "<your_zen_api_key>"
 ```
 
-With both providers enabled, models that Anthropic lists go to Anthropic and the rest to Zen.
+When several enabled providers list a model, the first of `anthropic`, `openai`, `zen` is used: the direct APIs before the aggregator.
 
 ### MCP servers
 
 ```yaml
 # configuration.yaml
-agents:
-  path: /etc/beaver/agents
 tools:
   providers:
     mcp:
@@ -197,8 +205,6 @@ The tools appear as `mcp_atlassian_<tool>` and `mcp_tracker_<tool>`.
 
 ```yaml
 # configuration.yaml
-agents:
-  path: /etc/beaver/agents
 tools:
   providers:
     javascript:
@@ -218,8 +224,6 @@ The package `weather` in `/etc/beaver/tools/weather/` gets `{ "api_key": "…", 
 
 ```yaml
 # configuration.yaml
-agents:
-  path: /etc/beaver/agents
 tools:
   configuration:
     git:

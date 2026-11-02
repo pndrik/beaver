@@ -12,7 +12,8 @@ use crate::core::{
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Step {
-    pub name: String,
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     pub context: Option<String>,
     #[serde(default)]
@@ -22,11 +23,21 @@ pub struct Step {
 }
 
 impl Step {
+    pub(crate) fn position(parent: Option<&str>, index: usize) -> String {
+        match parent {
+            Some(parent) => format!("{parent}.steps[{index}]"),
+            None => format!("steps[{index}]"),
+        }
+    }
+
+    pub fn label<'a>(&'a self, position: &'a str) -> &'a str {
+        self.name.as_deref().unwrap_or(position)
+    }
+
     pub fn context_name(&self) -> &str {
         self.context.as_deref().unwrap_or_default()
     }
 
-    /// Whether `when` allows the step to run; true without `when`.
     pub(crate) async fn runs(
         &self,
         ctx: &AppContext,
@@ -39,10 +50,12 @@ impl Step {
         }
     }
 
-    pub fn validate(&self, ctx: &AppContext) -> Result<(), AppError> {
-        identifier(ctx, "step", &self.name)?;
+    pub fn validate(&self, ctx: &AppContext, position: &str) -> Result<(), AppError> {
+        if let Some(name) = &self.name {
+            identifier(ctx, "step", name)?;
+        }
         self.check(ctx)
-            .map_err(|err| within(&format!("step '{}'", self.name), err))
+            .map_err(|err| within(&format!("step '{}'", self.label(position)), err))
     }
 
     fn check(&self, ctx: &AppContext) -> Result<(), AppError> {

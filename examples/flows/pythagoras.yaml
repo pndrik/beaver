@@ -36,8 +36,7 @@ spec:
         arguments:
           instruction: "Square the number {{ Arguments.b }}"
 
-    - name: sum
-      type: set
+    - type: set
       arguments:
         squares: { value: "{{ Flows.square_a.result + Flows.square_b.result }}", type: float }
 
@@ -48,8 +47,7 @@ spec:
         arguments:
           instruction: "Take the square root of {{ Variables.squares }}"
 
-    - name: check
-      context: checker
+    - context: checker
       type: agent
       # A failed calculation leaves `result` at 0.0.
       when: [{ left: "{{ Flows.root.result }}", operator: ">", right: "0" }]

@@ -13,7 +13,7 @@ use app_domains::{
 };
 use genai::chat::ChatRole;
 
-use super::GenAi;
+use super::{GenAi, utils::with_trailing_slash};
 use crate::configuration::ConfigurationMap;
 
 fn context() -> AppContext {
@@ -122,5 +122,17 @@ async fn the_system_prompt_is_sent_after_a_summary() {
             ),
             (ChatRole::User, "two".to_string()),
         ]
+    );
+}
+
+#[test]
+fn endpoints_get_a_trailing_slash() {
+    assert_eq!(
+        with_trailing_slash("https://api.openai.com/v1".to_string()),
+        "https://api.openai.com/v1/"
+    );
+    assert_eq!(
+        with_trailing_slash("https://api.openai.com/v1/".to_string()),
+        "https://api.openai.com/v1/"
     );
 }

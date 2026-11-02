@@ -1,6 +1,7 @@
 ---
 # Called by other flows through a `flow` step, see pythagoras.yaml. It has no
-# webhook trigger. Callers read the result as `Flows.<step>.result`.
+# webhook trigger. Callers read the result as `Flows.<name>.result`,
+# where `<name>` is the name of their `flow` step.
 version: 1
 metadata:
   name: calculate
@@ -15,14 +16,12 @@ spec:
     calculator:
       agent: calculator
   steps:
-    - name: compute
-      context: calculator
+    - context: calculator
       type: agent
       arguments:
         prompt: "{{ Arguments.instruction }}"
 
-    - name: parse
-      type: set
+    - type: set
       arguments:
         # The last number in the answer.
         result: { value: "{{ Contexts.calculator.last().content }}", type: float, extract: "(-?\\d+(?:\\.\\d+)?)\\s*$" }

@@ -624,3 +624,92 @@ fn parses_flow_call_examples() {
     assert_eq!(call.flow, "calculate");
     assert!(call.arguments.contains_key("instruction"));
 }
+
+const UNNAMED: &str = "{ context: c, type: agent, arguments: { prompt: hi } }";
+
+const UNNAMED_LOOP: &str = r#"
+    - type: loop
+      arguments:
+        until: [{ left: "{{ Contexts.c.last().content }}", operator: "~=", right: done }]
+        steps:
+          - { context: c, type: agent, arguments: { prompt: hi } }
+          - { name: inner, context: c, type: agent, arguments: { prompt: hi } }
+"#;
+
+#[test]
+fn loads_steps_without_names() {
+    let (ctx, _) = support::temp_context();
+    let flow = parse(&flow_yaml(&format!("    - {UNNAMED}\n    - {UNNAMED}\n")));
+    flow.validate(&ctx).unwrap();
+    assert!(flow.spec.steps.iter().all(|step| step.name.is_none()));
+}
+
+#[test]
+fn loads_named_and_unnamed_steps_inside_loops() {
+    let (ctx, _) = support::temp_context();
+    let flow = parse(&flow_yaml(&format!(
+        "    - {AGENT}\n    - {UNNAMED}{UNNAMED_LOOP}"
+    )));
+    flow.validate(&ctx).unwrap();
+    assert_eq!(flow.spec.steps[0].name.as_deref(), Some("a"));
+    assert!(flow.spec.steps[2].name.is_none());
+    let Action::Loop(arguments) = &flow.spec.steps[2].action else {
+        panic!("expected loop action");
+    };
+    assert!(arguments.steps[0].name.is_none());
+    assert_eq!(arguments.steps[1].name.as_deref(), Some("inner"));
+}
+
+#[test]
+fn checks_names_of_named_steps_among_unnamed_ones() {
+    let invalid = flow_yaml(&format!(
+        "    - {UNNAMED}\n    - {{ name: a-b, context: c, type: agent, arguments: {{ prompt: hi }} }}\n"
+    ));
+    assert!(validation_error(&invalid).contains("step name 'a-b' must match"));
+
+    let duplicate = flow_yaml(&format!(
+        "    - {UNNAMED}\n    - {{ name: inner, context: c, type: agent, arguments: {{ prompt: hi }} }}{UNNAMED_LOOP}"
+    ));
+    assert!(validation_error(&duplicate).contains("step name 'inner' is used more than once"));
+}
+
+#[test]
+fn names_unnamed_invalid_steps_by_position() {
+    let top = flow_yaml(&format!(
+        "    - {UNNAMED}\n    - {UNNAMED}\n    - {{ type: agent, arguments: {{ prompt: hi }} }}\n"
+    ));
+    assert!(
+        validation_error(&top)
+            .ends_with("Flow 'f' is invalid: step 'steps[2]': context is missing")
+    );
+
+    let nested = flow_yaml(&format!("    - {UNNAMED}{UNNAMED_LOOP}")).replace(
+        "- { context: c, type: agent, arguments: { prompt: hi } }\n          - { name: inner",
+        "- { type: agent, arguments: { prompt: hi } }\n          - { name: inner",
+    );
+    let message = validation_error(&nested);
+    assert!(
+        message.contains("step 'steps[1].steps[0]': context is missing"),
+        "{message}"
+    );
+}
+
+#[test]
+fn names_unnamed_steps_with_unknown_context_by_position() {
+    let yaml = flow_yaml(&format!(
+        "    - {UNNAMED}\n    - {{ context: d, type: agent, arguments: {{ prompt: hi }} }}\n"
+    ));
+    let message = validation_error(&yaml);
+    assert!(
+        message.contains("step 'steps[1]' uses unknown context 'd'"),
+        "{message}"
+    );
+}
+
+#[test]
+fn names_named_steps_by_name_in_errors() {
+    let yaml = flow_yaml(&format!(
+        "    - {UNNAMED}\n    - {{ name: b, type: agent, arguments: {{ prompt: hi }} }}\n"
+    ));
+    assert!(validation_error(&yaml).contains("step 'b': context is missing"));
+}
