@@ -82,10 +82,21 @@ fn coder_denies_deleting_branches() {
     assert!(tools.permission("git_branch_delete").is_none());
     assert!(tools.is_denied("git_branch_delete"));
     assert!(tools.permission("git_push").is_some());
-    assert_eq!(
-        tools.permission("subagent_invoke").unwrap().scopes,
-        ["_list", "_invoke", "worker"]
-    );
+    assert!(tools.permission("subagent_list").is_none());
+    assert!(tools.permission("subagent_invoke").is_none());
+}
+
+#[test]
+fn conductor_delegates_only_to_the_worker() {
+    let conductor = parse(EXAMPLES[3].1);
+    let tools = &conductor.spec.tools;
+    for tool in ["subagent_list", "subagent_invoke"] {
+        assert_eq!(
+            tools.permission(tool).unwrap().scopes,
+            ["_list", "_invoke", "worker"],
+            "{tool}"
+        );
+    }
 }
 
 #[test]
